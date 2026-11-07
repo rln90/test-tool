@@ -1,0 +1,10 @@
+{
+  "dataUrl": "data/marketdata.json",
+  "refreshSeconds": 300,
+  "github": {
+    "owner": "rln90",
+    "repo": "test-tool",
+    "workflow": "dashboard.yml",
+    "ref": "main"
+  }
+}
