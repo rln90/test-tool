@@ -45,6 +45,8 @@ export interface Instrument {
   measures: Measure[];
   /** Fehlermeldung, falls dieses Instrument beim Abruf nicht geladen werden konnte. */
   error?: string;
+  /** true = Abruf fehlgeschlagen, es wird der letzte gültige Stand angezeigt. */
+  stale?: boolean;
 }
 
 export interface CurvePoint {
@@ -69,6 +71,7 @@ export interface Curve {
   lines: CurveLine[];
   measures?: Measure[];
   error?: string;
+  stale?: boolean;
 }
 
 /** Datenformat der Datei, die das Dashboard regelmäßig neu lädt. */
@@ -81,7 +84,16 @@ export interface MarketData {
   curves?: Curve[];
 }
 
+/** Angaben, um den Datenabruf (GitHub-Workflow) aus dem Dashboard heraus zu starten. */
+export interface GithubConfig {
+  owner: string;
+  repo: string;
+  workflow: string;
+  ref: string;
+}
+
 export interface AppConfig {
   dataUrl: string;
   refreshSeconds: number;
+  github?: GithubConfig;
 }

@@ -21,6 +21,7 @@ export async function loadConfig(): Promise<AppConfig> {
     return {
       dataUrl: cfg.dataUrl || DEFAULT_CONFIG.dataUrl,
       refreshSeconds: Math.max(15, Number(cfg.refreshSeconds) || DEFAULT_CONFIG.refreshSeconds),
+      github: cfg.github?.owner && cfg.github.repo && cfg.github.workflow ? cfg.github : undefined,
     };
   } catch {
     return DEFAULT_CONFIG;

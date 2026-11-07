@@ -1,27 +1,33 @@
 {
   "historyDays": 180,
-  "bigdata": {
-    "baseUrl": "https://api.bigdata.com",
+  "yahoo": {
+    "baseUrl": "https://query1.finance.yahoo.com/v8/finance/chart",
+    "pauseMs": 400,
     "instruments": [
-      {
-        "id": "msci-world",
-        "name": "MSCI World",
-        "note": "über iShares MSCI World ETF (URTH)",
-        "ticker": "URTH",
-        "rpEntityId": "C0BYWZ",
-        "quote": true
-      },
-      {
-        "id": "toyota",
-        "name": "Toyota Motor",
-        "ticker": "7203 / TM",
-        "rpEntityId": "CEC128",
-        "quote": true
-      }
-    ]
+      { "id": "msci-world", "name": "MSCI World", "note": "Kursindex (Preisindex)", "symbol": "^990100-USD-STRD", "currency": "USD" },
+      { "id": "toyota", "name": "Toyota Motor", "note": "Börse Tokio", "symbol": "7203.T" }
+    ],
+    "fx": {
+      "id": "wechselkurse",
+      "name": "Wechselkurse",
+      "note": "1 EUR = … Fremdwährung",
+      "base": "EUR",
+      "currencies": [
+        { "code": "USD", "label": "US-Dollar", "decimals": 4 },
+        { "code": "GBP", "label": "Pfund", "decimals": 4 },
+        { "code": "JPY", "label": "Yen", "decimals": 2 },
+        { "code": "CNY", "label": "Renminbi", "decimals": 4 },
+        { "code": "CNH", "label": "Renminbi off.", "decimals": 4 },
+        { "code": "PLN", "label": "Złoty", "decimals": 4 },
+        { "code": "SEK", "label": "Schw. Krone", "decimals": 4 },
+        { "code": "NOK", "label": "Norw. Krone", "decimals": 4 },
+        { "code": "RUB", "label": "Rubel", "decimals": 2 }
+      ]
+    }
   },
   "ecb": {
     "baseUrl": "https://data-api.ecb.europa.eu/service/data",
+    "fxFallback": true,
     "rates": {
       "id": "ezb-zinsen",
       "name": "EZB-Leitzinsen & €STR",

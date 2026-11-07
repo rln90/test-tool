@@ -1,9 +1,16 @@
-import { ArrowDownRight, ArrowUpRight, Minus, TriangleAlert } from 'lucide';
+import { ArrowDownRight, ArrowUpRight, History, Minus, TriangleAlert } from 'lucide';
 import { h } from './dom';
 import { icon } from './icons';
 import { renderCurve, renderLine, pruneCharts } from './charts';
 import { fmtDateTime, fmtNumber, fmtSigned, trendClass } from './format';
 import type { Curve, Instrument, MarketData, Measure } from './types';
+
+function problemNotice(item: { error?: string; stale?: boolean }): HTMLElement | null {
+  if (!item.error) return null;
+  return item.stale
+    ? h('div', { class: 'notice warn' }, icon(History), `Veraltet: ${item.error}`)
+    : h('div', { class: 'notice warn' }, icon(TriangleAlert), `Daten nicht verfügbar: ${item.error}`);
+}
 
 function trendIcon(v: number | null | undefined): SVGElement {
   if (v === null || v === undefined || v === 0) return icon(Minus, 14);
@@ -44,7 +51,7 @@ function instrumentCard(inst: Instrument): HTMLElement {
   const p = inst.price;
   const card = h(
     'article',
-    { class: 'card' },
+    { class: !p && inst.measures.length > 4 ? 'card wide' : 'card' },
     h(
       'header',
       { class: 'card-head' },
@@ -72,9 +79,8 @@ function instrumentCard(inst: Instrument): HTMLElement {
     ),
   );
 
-  if (inst.error) {
-    card.append(h('div', { class: 'notice warn' }, icon(TriangleAlert), `Daten nicht verfügbar: ${inst.error}`));
-  }
+  const instNotice = problemNotice(inst);
+  if (instNotice) card.append(instNotice);
 
   if (inst.series && inst.series.length > 1) {
     const canvas = h('canvas', { 'aria-label': `Kursverlauf ${inst.name}`, role: 'img' });
@@ -99,9 +105,8 @@ function curveCard(curve: Curve): HTMLElement {
     { class: 'card wide' },
     h('header', { class: 'card-head' }, h('div', {}, h('h2', {}, curve.name))),
   );
-  if (curve.error) {
-    card.append(h('div', { class: 'notice warn' }, icon(TriangleAlert), `Daten nicht verfügbar: ${curve.error}`));
-  }
+  const curveNotice = problemNotice(curve);
+  if (curveNotice) card.append(curveNotice);
   if (curve.lines.length && curve.lines[0].points.length) {
     const canvas = h('canvas', { 'aria-label': `Zinskurve ${curve.name}`, role: 'img' });
     card.append(h('div', { class: 'chart tall' }, canvas));

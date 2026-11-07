@@ -14,6 +14,8 @@
   --warn-text: #7a5300;
   --error-bg: #fdecea;
   --error-text: #8f1f17;
+  --info-bg: #e8eefc;
+  --info-text: #1f3f8f;
   color-scheme: light;
 }
 
@@ -34,6 +36,8 @@
     --warn-text: #f3d27a;
     --error-bg: #3b1714;
     --error-text: #f8b4ad;
+    --info-bg: #17223d;
+    --info-text: #b4c6f8;
     color-scheme: dark;
   }
 }
@@ -67,6 +71,29 @@ h1 { font-size: 20px; margin: 0 0 2px; }
 }
 .btn:hover { border-color: var(--accent); color: var(--accent); }
 .btn:disabled { opacity: .6; cursor: default; }
+.btn[hidden] { display: none; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.btn.primary:hover { filter: brightness(1.1); color: var(--surface); }
+.btn.link { border: 0; background: none; color: var(--muted); padding-left: 0; margin-right: auto; }
+.icon-btn { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 4px; display: inline-flex; }
+.icon-btn:hover { color: var(--text); }
+.input {
+  width: 100%; padding: 8px 10px; border-radius: 8px; font: inherit;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+}
+.input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dialog {
+  border: 1px solid var(--border); border-radius: 12px; padding: 0;
+  background: var(--surface); color: var(--text); width: min(480px, calc(100vw - 32px));
+}
+.dialog::backdrop { background: rgb(0 0 0 / .4); }
+.dialog-body { padding: 16px; display: grid; gap: 12px; }
+.dialog-body p, .dialog-body ol { margin: 0; }
+.dialog-body ol { padding-left: 20px; color: var(--muted); }
+.dialog-body a { color: var(--accent); }
+.dialog-head { display: flex; justify-content: space-between; align-items: center; }
+.dialog-head h2 { font-size: 16px; margin: 0; display: inline-flex; align-items: center; gap: 8px; }
+.dialog-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 .btn.spinning svg { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -77,6 +104,7 @@ h1 { font-size: 20px; margin: 0 0 2px; }
 .notice[hidden] { display: none; }
 .notice.warn { background: var(--warn-bg); color: var(--warn-text); }
 .notice.error { background: var(--error-bg); color: var(--error-text); }
+.notice.info { background: var(--info-bg); color: var(--info-text); }
 .card .notice { margin: 12px 0 0; }
 
 .grid {

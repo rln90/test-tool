@@ -1,13 +1,15 @@
 # Holt die Marktdaten, baut das Dashboard und veröffentlicht es auf GitHub Pages.
-# Läuft zeitgesteuert, bei jedem Push auf main und manuell ("Run workflow").
+# Läuft stündlich (Mo–Fr rund um die Uhr), bei jedem Push auf main und auf Aufforderung
+# (Button „Jetzt abrufen“ im Dashboard oder Actions → „Dashboard aktualisieren“ → Run workflow).
 name: Dashboard aktualisieren
 
 on:
   push:
     branches: [main]
   schedule:
-    # Werktags stündlich von 06:23 bis 21:23 UTC (Zeitpläne laufen nur auf dem Standard-Branch).
-    - cron: '23 6-21 * * 1-5'
+    # Minute 7 statt 0, weil GitHub zur vollen Stunde stark ausgelastet ist.
+    # Zeitpläne laufen nur auf dem Standard-Branch (main).
+    - cron: '7 * * * 1-5'
   workflow_dispatch:
 
 permissions:
@@ -20,30 +22,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  update:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - id: pages
+        uses: actions/configure-pages@v5
       - run: npm ci
-      - name: Daten abrufen (Bigdata.com, EZB)
+      - name: Daten abrufen (Yahoo Finance, EZB)
         run: npm run fetch-data
         env:
-          BIGDATA_API_KEY: ${{ secrets.BIGDATA_API_KEY }}
+          # Bei Ausfall einer Quelle wird der zuletzt veröffentlichte Stand übernommen.
+          PREVIOUS_DATA_URL: ${{ steps.pages.outputs.base_url }}/data/marketdata.json
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
       - id: deployment
         uses: actions/deploy-pages@v4

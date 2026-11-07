@@ -1,30 +1,31 @@
 # Marktdaten-Dashboard
 
-Web-Tool zur automatisch aktualisierenden Darstellung ausgewählter Marktdaten:
+Persönliches Dashboard mit stündlich aktualisierten Marktdaten.
 
-| Bereich | Quelle | Schlüssel nötig |
+| Bereich | Quelle | Key |
 |---|---|---|
-| Aktien/ETF-Kurse (MSCI World über iShares MSCI World ETF, Toyota) | [Bigdata.com](https://bigdata.com) Structured Data API | ja (`BIGDATA_API_KEY`) |
-| EZB-Leitzinsen, €STR | [EZB Data Portal](https://data.ecb.europa.eu) | nein |
-| Euro-Zinskurve (AAA-Staatsanleihen) inkl. Vergleich vor 30 Tagen / 1 Jahr | EZB Data Portal | nein |
+| MSCI World (Kursindex, USD), Toyota (Tokio) | Yahoo Finance (inoffizielle Schnittstelle) | nein |
+| Wechselkurse EUR → USD, GBP, JPY, CNY, CNH, PLN, SEK, NOK, RUB | Yahoo Finance, ersatzweise EZB-Referenzkurse (außer RUB, CNH) | nein |
+| EZB-Leitzinsen, €STR | EZB Data Portal | nein |
+| Euro-Zinskurve (AAA-Staatsanleihen) mit Vergleich vor 30 Tagen / 1 Jahr | EZB Data Portal | nein |
+
+Fällt eine Quelle aus, bleibt der letzte veröffentlichte Stand stehen und wird als „Veraltet“ markiert.
 
 ## Ablauf
 
 ```
-GitHub Actions (zeitgesteuert)
-  └─ npm run fetch-data  → public/data/marketdata.json   (Bigdata.com + EZB)
-  └─ npm run build       → dist/                         (fertige Webseite)
+GitHub Actions (stündlich Mo–Fr, bei Push auf main, oder per Button „Jetzt abrufen“)
+  └─ npm run fetch-data  → public/data/marketdata.json
+  └─ npm run build       → dist/
   └─ Veröffentlichung auf GitHub Pages
-Browser: lädt data/marketdata.json alle 5 Minuten neu
+Browser: lädt die Datendatei alle 5 Minuten neu
 ```
-
-Der API-Key liegt nur als GitHub-Secret vor und gelangt nie in die Webseite.
 
 ## Befehle
 
 ```bash
 npm install
-npm run fetch-data    # Daten holen (BIGDATA_API_KEY als Umgebungsvariable)
+npm run fetch-data    # Daten holen
 npm run dev           # Entwicklungsserver
 npm run build         # Produktions-Build nach dist/
 npm run sample-data   # synthetische Beispieldaten zum Testen der Oberfläche
@@ -32,13 +33,12 @@ npm run sample-data   # synthetische Beispieldaten zum Testen der Oberfläche
 
 ## Konfiguration
 
-- `data.config.json`: welche Instrumente (Bigdata.com `rpEntityId`), Zinsreihen und Laufzeiten abgerufen werden.
-- `public/app-config.json`: Neulade-Intervall im Browser (`refreshSeconds`).
-- `.github/workflows/dashboard.yml`: Zeitplan des Datenabrufs (Standard: werktags stündlich).
+- `data.config.json`: Instrumente (Yahoo-Symbole), Währungen, EZB-Zinsreihen, Laufzeiten der Zinskurve.
+- `public/app-config.json`: Neulade-Intervall im Browser und GitHub-Angaben für den Button „Jetzt abrufen“.
+- `.github/workflows/dashboard.yml`: Zeitplan des Datenabrufs.
 
 ## Einrichtung auf GitHub
 
-1. API-Key unter [platform.bigdata.com/api-keys](https://platform.bigdata.com/api-keys) anlegen.
-2. Im Repository: *Settings → Secrets and variables → Actions → New repository secret*, Name `BIGDATA_API_KEY`.
-3. *Settings → Pages → Build and deployment → Source: GitHub Actions*.
-4. Änderungen nach `main` mergen; danach läuft der Workflow automatisch (oder unter *Actions → Dashboard aktualisieren → Run workflow*).
+1. *Settings → Pages → Build and deployment → Source: GitHub Actions*.
+2. Änderungen nach `main` mergen; der Workflow läuft danach automatisch.
+3. Für den Button „Jetzt abrufen“: ein [Fine-grained Token](https://github.com/settings/personal-access-tokens/new) nur für dieses Repository mit der Berechtigung *Actions: Read and write* anlegen. Das Dashboard fragt beim ersten Klick danach und speichert es nur im Browser.
