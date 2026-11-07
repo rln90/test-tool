@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.env
+*.local
+bigdata.config.json
+public/data/marketdata.json

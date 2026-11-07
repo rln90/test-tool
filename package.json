@@ -1,0 +1,21 @@
+{
+  "name": "marktdaten-dashboard",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "fetch-data": "node scripts/fetch-bigdata.mjs",
+    "sample-data": "node scripts/sample-data.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vite": "^8.3.6"
+  },
+  "dependencies": {
+    "chart.js": "^4.6.1",
+    "lucide": "^1.70.0"
+  }
+}

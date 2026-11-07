@@ -1,0 +1,4 @@
+{
+  "dataUrl": "data/marketdata.json",
+  "refreshSeconds": 300
+}
