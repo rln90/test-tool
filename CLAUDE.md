@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+_Version 2 – Vorgängerversion: [CLAUDE_V1.md](CLAUDE_V1.md)_
+
 ## Regeln
 
 - **Build ohne Warnings:** Der Build muss ohne Warnungen durchlaufen. Neue Warnungen beheben statt unterdrücken.
