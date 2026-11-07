@@ -96,4 +96,6 @@ export interface AppConfig {
   dataUrl: string;
   refreshSeconds: number;
   github?: GithubConfig;
+  /** Optionaler Hinweis oben auf der Seite, z. B. für eine Vorschau. */
+  notice?: string;
 }

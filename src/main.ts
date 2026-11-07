@@ -162,5 +162,6 @@ setPauseButton();
 loadConfig().then((cfg) => {
   config = cfg;
   fetchBtn.hidden = !cfg.github;
+  if (cfg.notice) showInfo(cfg.notice);
   void refresh();
 });
