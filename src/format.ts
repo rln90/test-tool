@@ -14,15 +14,16 @@ export function fmtSigned(v: number | null | undefined, decimals = 2, suffix = '
 
 export function fmtDateTime(iso: string | undefined): string {
   if (!iso) return '–';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return fmtDate(iso, true);
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-export function fmtDate(iso: string): string {
+export function fmtDate(iso: string, long = false): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: '2-digit' });
+  return d.toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: long ? 'numeric' : '2-digit' });
 }
 
 export function trendClass(v: number | null | undefined): string {

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "fetch-data": "node scripts/fetch-bigdata.mjs",
+    "fetch-data": "node scripts/fetch-data.mjs",
     "sample-data": "node scripts/sample-data.mjs"
   },
   "devDependencies": {

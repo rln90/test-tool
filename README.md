@@ -1,42 +1,44 @@
 # Marktdaten-Dashboard
 
-Web-Tool zur automatisch aktualisierenden Darstellung ausgewählter Marktdaten und Measures von [Bigdata.com](https://bigdata.com).
+Web-Tool zur automatisch aktualisierenden Darstellung ausgewählter Marktdaten:
 
-## Aufbau
+| Bereich | Quelle | Schlüssel nötig |
+|---|---|---|
+| Aktien/ETF-Kurse (MSCI World über iShares MSCI World ETF, Toyota) | [Bigdata.com](https://bigdata.com) Structured Data API | ja (`BIGDATA_API_KEY`) |
+| EZB-Leitzinsen, €STR | [EZB Data Portal](https://data.ecb.europa.eu) | nein |
+| Euro-Zinskurve (AAA-Staatsanleihen) inkl. Vergleich vor 30 Tagen / 1 Jahr | EZB Data Portal | nein |
+
+## Ablauf
 
 ```
-Bigdata.com-API ──► scripts/fetch-bigdata.mjs ──► data/marketdata.json ──► Dashboard (dist/)
-                    (mit API-Key, serverseitig)                           lädt die Datei alle N Sekunden neu
+GitHub Actions (zeitgesteuert)
+  └─ npm run fetch-data  → public/data/marketdata.json   (Bigdata.com + EZB)
+  └─ npm run build       → dist/                         (fertige Webseite)
+  └─ Veröffentlichung auf GitHub Pages
+Browser: lädt data/marketdata.json alle 5 Minuten neu
 ```
 
-Der API-Key bleibt dadurch auf dem Server bzw. in der CI und landet nie im Browser.
-
-- **Dashboard** (`src/`): Vite + TypeScript, Chart.js, Lucide-Icons. Zeigt pro Instrument Kurs, Veränderung, Kursverlauf und beliebige Kennzahlen (mit optionalem Vorwert und Mini-Verlauf). Aktualisiert sich automatisch, pausiert im Hintergrund-Tab, manuell auslösbar.
-- **Laufzeit-Konfiguration** (`public/app-config.json` → `dist/app-config.json`): `dataUrl` und `refreshSeconds` (Standard 300 s), änderbar ohne neuen Build.
-- **Datenformat**: siehe `src/types.ts` (`MarketData`).
+Der API-Key liegt nur als GitHub-Secret vor und gelangt nie in die Webseite.
 
 ## Befehle
 
 ```bash
 npm install
+npm run fetch-data    # Daten holen (BIGDATA_API_KEY als Umgebungsvariable)
 npm run dev           # Entwicklungsserver
 npm run build         # Produktions-Build nach dist/
-npm run sample-data   # synthetische Beispieldaten (als solche gekennzeichnet) zum Testen
-npm run fetch-data    # echte Daten über die Bigdata.com-API abrufen
+npm run sample-data   # synthetische Beispieldaten zum Testen der Oberfläche
 ```
 
-## Bigdata.com anbinden
+## Konfiguration
 
-1. `bigdata.config.example.json` nach `bigdata.config.json` kopieren.
-2. Je Instrument unter `requests` die Endpunkte eintragen und unter `price`, `series`, `measures` die Feldpfade in der API-Antwort angeben (z. B. `prices.data.history`, `tearsheet.data.pe_ratio`; das erste Segment ist der Name der Anfrage).
-3. Abrufen:
-   ```bash
-   BIGDATA_API_KEY=... npm run fetch-data
-   ```
-   Optional `BIGDATA_API_URL` setzt die Basis-URL; `--out dist/data/marketdata.json` schreibt direkt in einen bestehenden Build.
+- `data.config.json`: welche Instrumente (Bigdata.com `rpEntityId`), Zinsreihen und Laufzeiten abgerufen werden.
+- `public/app-config.json`: Neulade-Intervall im Browser (`refreshSeconds`).
+- `.github/workflows/dashboard.yml`: Zeitplan des Datenabrufs (Standard: werktags stündlich).
 
-Schlägt der Abruf für alle Instrumente fehl, bleibt die bisherige Datei unverändert. Einzelne Fehler werden pro Instrument im Dashboard angezeigt.
+## Einrichtung auf GitHub
 
-## Automatische Aktualisierung im Betrieb
-
-Den Abruf zyklisch ausführen (z. B. Cron auf dem Webserver oder geplanter CI-Job) und die Datei nach `dist/data/marketdata.json` schreiben. Das geöffnete Dashboard übernimmt neue Daten beim nächsten Intervall automatisch.
+1. API-Key unter [platform.bigdata.com/api-keys](https://platform.bigdata.com/api-keys) anlegen.
+2. Im Repository: *Settings → Secrets and variables → Actions → New repository secret*, Name `BIGDATA_API_KEY`.
+3. *Settings → Pages → Build and deployment → Source: GitHub Actions*.
+4. Änderungen nach `main` mergen; danach läuft der Workflow automatisch (oder unter *Actions → Dashboard aktualisieren → Run workflow*).

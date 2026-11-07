@@ -1,20 +1,21 @@
 import { ArrowDownRight, ArrowUpRight, Minus, TriangleAlert } from 'lucide';
 import { h } from './dom';
 import { icon } from './icons';
-import { renderLine, pruneCharts } from './charts';
+import { renderCurve, renderLine, pruneCharts } from './charts';
 import { fmtDateTime, fmtNumber, fmtSigned, trendClass } from './format';
-import type { Instrument, MarketData, Measure } from './types';
+import type { Curve, Instrument, MarketData, Measure } from './types';
 
 function trendIcon(v: number | null | undefined): SVGElement {
   if (v === null || v === undefined || v === 0) return icon(Minus, 14);
   return v > 0 ? icon(ArrowUpRight, 14) : icon(ArrowDownRight, 14);
 }
 
-function measureTile(inst: Instrument, m: Measure): HTMLElement {
+function measureTile(ownerId: string, m: Measure): HTMLElement {
   const decimals = m.decimals ?? 2;
   const delta =
     m.value !== null && m.previous !== null && m.previous !== undefined ? m.value - m.previous : null;
   const unit = m.unit ? ` ${m.unit}` : '';
+  const deltaUnit = m.deltaUnit ? ` ${m.deltaUnit}` : unit;
 
   const tile = h(
     'div',
@@ -24,9 +25,9 @@ function measureTile(inst: Instrument, m: Measure): HTMLElement {
     delta !== null
       ? h(
           'div',
-          { class: `measure-delta ${trendClass(delta)}`, title: 'Veränderung zum Vorwert' },
+          { class: `measure-delta ${m.neutral ? 'flat' : trendClass(delta)}`, title: m.previousLabel ?? 'Veränderung zum Vorwert' },
           trendIcon(delta),
-          fmtSigned(delta, decimals, unit),
+          fmtSigned(delta, decimals, deltaUnit),
         )
       : null,
   );
@@ -34,7 +35,7 @@ function measureTile(inst: Instrument, m: Measure): HTMLElement {
   if (m.series && m.series.length > 1) {
     const canvas = h('canvas', { 'aria-label': `Verlauf ${m.label}`, role: 'img' });
     tile.append(h('div', { class: 'spark' }, canvas));
-    requestAnimationFrame(() => renderLine(`${inst.id}:${m.key}`, canvas, m.series!, decimals, true));
+    requestAnimationFrame(() => renderLine(`${ownerId}:${m.key}`, canvas, m.series!, decimals, true));
   }
   return tile;
 }
@@ -52,6 +53,7 @@ function instrumentCard(inst: Instrument): HTMLElement {
         {},
         h('h2', {}, inst.name),
         h('div', { class: 'sub' }, [inst.ticker, inst.currency].filter(Boolean).join(' · ')),
+        inst.note ? h('div', { class: 'note' }, inst.note) : null,
       ),
       p
         ? h(
@@ -81,10 +83,38 @@ function instrumentCard(inst: Instrument): HTMLElement {
   }
 
   if (inst.measures.length) {
-    card.append(h('div', { class: 'measures' }, ...inst.measures.map((m) => measureTile(inst, m))));
+    card.append(h('div', { class: 'measures' }, ...inst.measures.map((m) => measureTile(inst.id, m))));
   }
 
-  if (p?.asOf) card.append(h('footer', { class: 'card-foot' }, `Stand: ${fmtDateTime(p.asOf)}`));
+  const foot = [p?.asOf ? `Stand: ${fmtDateTime(p.asOf)}` : '', inst.source ? `Quelle: ${inst.source}` : '']
+    .filter(Boolean)
+    .join(' · ');
+  if (foot) card.append(h('footer', { class: 'card-foot' }, foot));
+  return card;
+}
+
+function curveCard(curve: Curve): HTMLElement {
+  const card = h(
+    'article',
+    { class: 'card wide' },
+    h('header', { class: 'card-head' }, h('div', {}, h('h2', {}, curve.name))),
+  );
+  if (curve.error) {
+    card.append(h('div', { class: 'notice warn' }, icon(TriangleAlert), `Daten nicht verfügbar: ${curve.error}`));
+  }
+  if (curve.lines.length && curve.lines[0].points.length) {
+    const canvas = h('canvas', { 'aria-label': `Zinskurve ${curve.name}`, role: 'img' });
+    card.append(h('div', { class: 'chart tall' }, canvas));
+    requestAnimationFrame(() => renderCurve(`${curve.id}:curve`, canvas, curve));
+  }
+  if (curve.measures?.length) {
+    card.append(h('div', { class: 'measures' }, ...curve.measures.map((m) => measureTile(curve.id, m))));
+  }
+  const asOf = curve.lines[0]?.asOf;
+  const foot = [asOf ? `Stand: ${fmtDateTime(asOf)}` : '', curve.source ? `Quelle: ${curve.source}` : '']
+    .filter(Boolean)
+    .join(' · ');
+  if (foot) card.append(h('footer', { class: 'card-foot' }, foot));
   return card;
 }
 
@@ -95,10 +125,11 @@ export function renderData(container: HTMLElement, data: MarketData): void {
       h('div', { class: 'notice warn' }, icon(TriangleAlert), 'Beispieldaten – keine echten Marktdaten.'),
     );
   }
-  if (!data.instruments.length) {
-    container.append(h('div', { class: 'empty' }, 'Keine Instrumente in den Daten enthalten.'));
+  const curves = data.curves ?? [];
+  if (!data.instruments.length && !curves.length) {
+    container.append(h('div', { class: 'empty' }, 'Keine Daten enthalten.'));
     return;
   }
-  container.append(h('div', { class: 'grid' }, ...data.instruments.map(instrumentCard)));
+  container.append(h('div', { class: 'grid' }, ...data.instruments.map(instrumentCard), ...curves.map(curveCard)));
   requestAnimationFrame(pruneCharts);
 }

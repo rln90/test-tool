@@ -8,6 +8,8 @@
   --accent: #2f5bd3;
   --up: #1a8a52;
   --down: #c8372d;
+  --compare-1: #8a94a6;
+  --compare-2: #c39a3a;
   --warn-bg: #fff6e0;
   --warn-text: #7a5300;
   --error-bg: #fdecea;
@@ -26,6 +28,8 @@
     --accent: #7c9cf0;
     --up: #3ccf86;
     --down: #f2685c;
+    --compare-1: #7d8696;
+    --compare-2: #d4ad55;
     --warn-bg: #3a2f10;
     --warn-text: #f3d27a;
     --error-bg: #3b1714;
@@ -89,16 +93,19 @@ h1 { font-size: 20px; margin: 0 0 2px; }
 .sub { color: var(--muted); font-size: 12px; }
 .price { text-align: right; white-space: nowrap; }
 .price-last { font-size: 20px; font-weight: 600; }
-.price-change, .measure-delta { display: inline-flex; align-items: center; gap: 2px; font-size: 13px; }
+.price-change, .measure-delta { display: inline-flex; align-items: center; gap: 2px; font-size: 13px; white-space: nowrap; }
 .up { color: var(--up); }
 .down { color: var(--down); }
 .flat { color: var(--muted); }
 
 .chart { position: relative; height: 180px; margin-top: 12px; }
+.chart.tall { height: 260px; }
+.card.wide { grid-column: 1 / -1; }
+.note { color: var(--muted); font-size: 12px; font-style: italic; }
 
 .measures {
   display: grid; gap: 8px; margin-top: 12px;
-  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
 }
 .measure { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; min-width: 0; }
 .measure-label { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

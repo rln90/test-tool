@@ -1,0 +1,44 @@
+{
+  "historyDays": 180,
+  "bigdata": {
+    "baseUrl": "https://api.bigdata.com",
+    "instruments": [
+      {
+        "id": "msci-world",
+        "name": "MSCI World",
+        "note": "über iShares MSCI World ETF (URTH)",
+        "ticker": "URTH",
+        "rpEntityId": "C0BYWZ",
+        "quote": true
+      },
+      {
+        "id": "toyota",
+        "name": "Toyota Motor",
+        "ticker": "7203 / TM",
+        "rpEntityId": "CEC128",
+        "quote": true
+      }
+    ]
+  },
+  "ecb": {
+    "baseUrl": "https://data-api.ecb.europa.eu/service/data",
+    "rates": {
+      "id": "ezb-zinsen",
+      "name": "EZB-Leitzinsen & €STR",
+      "series": [
+        { "key": "dfr", "label": "Einlagefazilität", "flow": "FM", "series": "D.U2.EUR.4F.KR.DFR.LEV" },
+        { "key": "mro", "label": "Hauptrefinanzierung", "flow": "FM", "series": "D.U2.EUR.4F.KR.MRR_FR.LEV" },
+        { "key": "estr", "label": "€STR", "flow": "EST", "series": "B.EU000A2X2A25.WT" }
+      ]
+    },
+    "curve": {
+      "id": "eur-zinskurve",
+      "name": "Euro-Zinskurve (AAA-Staatsanleihen)",
+      "flow": "YC",
+      "seriesPrefix": "B.U2.EUR.4F.G_N_A.SV_C_YM.SR_",
+      "maturities": ["3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y"],
+      "compareDaysAgo": [30, 365],
+      "highlight": ["2Y", "10Y"]
+    }
+  }
+}

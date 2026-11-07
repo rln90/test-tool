@@ -27,8 +27,10 @@ app.append(
   h(
     'footer',
     { class: 'pagefoot' },
-    'Datenquelle: ',
+    'Datenquellen: ',
     h('a', { href: 'https://bigdata.com', target: '_blank', rel: 'noopener' }, 'Bigdata.com'),
+    ', ',
+    h('a', { href: 'https://data.ecb.europa.eu', target: '_blank', rel: 'noopener' }, 'EZB Data Portal'),
   ),
 );
 

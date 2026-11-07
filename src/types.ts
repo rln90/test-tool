@@ -11,7 +11,13 @@ export interface Measure {
   value: number | null;
   /** Vorheriger Wert, um eine Veränderung anzuzeigen. */
   previous?: number | null;
+  /** Beschreibung des Vorwerts, z. B. „ggü. 01.05.2026“. */
+  previousLabel?: string;
   unit?: string;
+  /** Einheit der Veränderung, falls abweichend (z. B. „%-Pkt.“ bei Zinsen). */
+  deltaUnit?: string;
+  /** true = Anstieg/Rückgang nicht als gut/schlecht einfärben (z. B. Zinsen). */
+  neutral?: boolean;
   /** Anzahl Nachkommastellen für die Anzeige. */
   decimals?: number;
   asOf?: string;
@@ -28,13 +34,40 @@ export interface Price {
 export interface Instrument {
   id: string;
   name: string;
+  /** Zusatzhinweis, z. B. welches Wertpapier als Stellvertreter dient. */
+  note?: string;
   ticker?: string;
   currency?: string;
+  source?: string;
   price?: Price;
   /** Kursverlauf. */
   series?: Point[];
   measures: Measure[];
   /** Fehlermeldung, falls dieses Instrument beim Abruf nicht geladen werden konnte. */
+  error?: string;
+}
+
+export interface CurvePoint {
+  /** Laufzeit, z. B. „10Y“. */
+  label: string;
+  years: number;
+  v: number;
+}
+
+export interface CurveLine {
+  label: string;
+  asOf: string;
+  points: CurvePoint[];
+}
+
+/** Zinskurve: erste Linie = aktuell, weitere = Vergleichsstände. */
+export interface Curve {
+  id: string;
+  name: string;
+  unit?: string;
+  source?: string;
+  lines: CurveLine[];
+  measures?: Measure[];
   error?: string;
 }
 
@@ -45,6 +78,7 @@ export interface MarketData {
   /** true = Beispieldaten, keine echten Marktdaten. */
   sample?: boolean;
   instruments: Instrument[];
+  curves?: Curve[];
 }
 
 export interface AppConfig {
