@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "marktdaten-dashboard",
+  "main": "worker/index.js",
+  "compatibility_date": "2025-11-01",
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    // Diese Pfade beantwortet der Worker selbst, alles andere sind statische Dateien aus dist/.
+    "run_worker_first": ["/data/*", "/api/*", "/app-config.json"]
+  },
+  // Wird beim ersten Deploy automatisch angelegt (ohne id).
+  "kv_namespaces": [{ "binding": "DATA" }],
+  "triggers": {
+    // Je ein Lauf pro Teilbereich, siehe CRON_PART in worker/index.js.
+    "crons": ["5 * * * *", "6 * * * *", "7 * * * *"]
+  }
+}

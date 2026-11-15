@@ -1,6 +1,6 @@
 import './style.css';
 import { CloudDownload, Info, Pause, Play, RefreshCw, TriangleAlert } from 'lucide';
-import { loadConfig, loadMarketData } from './api';
+import { loadConfig, loadMarketData, refreshViaWorker } from './api';
 import { h } from './dom';
 import { icon } from './icons';
 import { renderData } from './render';
@@ -130,6 +130,17 @@ async function refresh(): Promise<void> {
 }
 
 async function startFetch(): Promise<void> {
+  if (config.refreshUrl) {
+    fetchBtn.disabled = true;
+    fetchBtn.classList.add('spinning');
+    showInfo('Daten werden abgerufen …');
+    const result = await refreshViaWorker(config.refreshUrl, config.refreshParts ?? ['kurse', 'fx', 'ezb']);
+    fetchBtn.disabled = false;
+    fetchBtn.classList.remove('spinning');
+    showInfo(result.ok && !result.message ? null : (result.message ?? null));
+    await refresh();
+    return;
+  }
   if (!config.github) return;
   fetchBtn.disabled = true;
   const result = await triggerWorkflow(config.github);
@@ -161,7 +172,7 @@ window.setInterval(updateStatus, 1000);
 setPauseButton();
 loadConfig().then((cfg) => {
   config = cfg;
-  fetchBtn.hidden = !cfg.github;
+  fetchBtn.hidden = !cfg.github && !cfg.refreshUrl;
   if (cfg.notice) showInfo(cfg.notice);
   void refresh();
 });
