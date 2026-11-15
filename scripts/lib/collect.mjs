@@ -108,8 +108,10 @@ function parseYahoo(result) {
   const lastTime = meta.regularMarketTime ? new Date(meta.regularMarketTime * 1000) : null;
   let lastDate = lastTime ? isoDate(new Date(lastTime.getTime() + offset)) : series.at(-1)?.t;
   // Yahoo stempelt manche Kurse (Indizes, Devisen) mit Samstag/Sonntag – dem letzten Handelstag zuordnen.
+  // Kryptowährungen handeln auch am Wochenende und bleiben unverändert.
+  const tradesWeekends = meta.instrumentType === 'CRYPTOCURRENCY';
   const weekday = lastDate ? new Date(`${lastDate}T12:00:00Z`).getUTCDay() : 1;
-  if (lastDate && (weekday === 0 || weekday === 6)) {
+  if (lastDate && !tradesWeekends && (weekday === 0 || weekday === 6)) {
     lastDate = [...series].reverse().find((p) => p.t <= lastDate && ![0, 6].includes(new Date(`${p.t}T12:00:00Z`).getUTCDay()))?.t ?? lastDate;
     while (series.length && series.at(-1).t > lastDate) series.pop();
   }
@@ -378,7 +380,7 @@ function withFallback(items, previousItems) {
 export class NoDataError extends Error {}
 
 /** Teilbereiche, die einzeln abgerufen werden können (z. B. je ein Cloudflare-Cron-Lauf). */
-export const PARTS = ['kurse', 'fx', 'ezb'];
+export const PARTS = ['kurse', 'etf', 'fx', 'ezb'];
 
 /**
  * Holt die gewünschten Teilbereiche (Standard: alle). Ausgefallene Bereiche werden durch den
@@ -391,8 +393,12 @@ export async function collectData(cfg, previous = null, parts = PARTS) {
   const want = (p) => parts.includes(p);
   const yahoo = createYahooClient();
 
+  // Instrumente gehören zum Teilbereich aus „part“ (Standard: „kurse“).
+  const instrumentsFor = (part) => (config.yahoo?.instruments ?? []).filter((inst) => (inst.part ?? 'kurse') === part);
+  const wantedInstruments = PARTS.filter(want).flatMap(instrumentsFor);
+
   const [yahooItems, fx, rates, curve] = await Promise.all([
-    want('kurse') ? Promise.all((config.yahoo?.instruments ?? []).map((inst) => fetchYahooInstrument(inst, yahoo))) : [],
+    Promise.all(wantedInstruments.map((inst) => fetchYahooInstrument(inst, yahoo))),
     want('fx') && config.yahoo?.fx ? fetchFx(yahoo) : null,
     want('ezb') && config.ecb?.rates ? fetchEcbRates() : null,
     want('ezb') && config.ecb?.curve ? fetchEcbCurve() : null,
@@ -421,7 +427,7 @@ export function mergeParts(byPart) {
   return {
     generatedAt: got.map((d) => d.generatedAt).sort().at(-1),
     source: 'Yahoo Finance, EZB',
-    instruments: [...pick('kurse'), ...pick('ezb'), ...pick('fx')],
+    instruments: [...pick('kurse'), ...pick('etf'), ...pick('ezb'), ...pick('fx')],
     curves: byPart.ezb?.curves ?? [],
   };
 }
