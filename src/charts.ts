@@ -9,7 +9,7 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import type { Curve, Point } from './types';
+import type { Curve, CurveLine, Point } from './types';
 import { fmtDate, fmtNumber } from './format';
 
 Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Filler, Tooltip, Legend);
@@ -87,35 +87,61 @@ export function renderLine(id: string, canvas: HTMLCanvasElement, series: Point[
   charts.set(id, chart);
 }
 
-/** Zeichnet eine Zinskurve: aktuelle Linie kräftig, Vergleichsstände gestrichelt und gedämpft. */
-export function renderCurve(id: string, canvas: HTMLCanvasElement, curve: Curve): void {
+/** Laufzeit-Kürzel lesbar machen: „3M“ → „3 M“, „10Y“ → „10 J“, „1W“ → „1 W“. */
+export function maturityLabel(m: string): string {
+  const n = m.slice(0, -1);
+  const u = m.slice(-1);
+  return `${n} ${u === 'Y' ? 'J' : u}`;
+}
+
+/** Ältere Datenstände: erste Linie = aktuell, weitere = Vergleichsstände einer einzigen Kurve. */
+export function normalizeCurveLines(curve: Curve): Required<CurveLine>[] {
+  const legacy = !curve.lines.some((l) => l.when);
+  return curve.lines.map((l, i) => ({
+    ...l,
+    curve: l.curve ?? 'aaa',
+    when: legacy ? (i === 0 ? 'Aktuell' : l.label) : (l.when ?? 'Aktuell'),
+  }));
+}
+
+/**
+ * Zeichnet die Zinskurve: aktuelle Linien kräftig in eigener Farbe je Kurve,
+ * der gewählte Vergleichsstand gestrichelt in derselben Farbe.
+ */
+export function renderCurve(id: string, canvas: HTMLCanvasElement, curve: Curve, compareWhen: string | null): void {
   charts.get(id)?.destroy();
-  const accent = cssVar('--accent');
   const muted = cssVar('--muted');
   const grid = cssVar('--grid');
-  const compareColors = [cssVar('--compare-1'), cssVar('--compare-2'), muted];
-  const labels = curve.lines[0]?.points.map((p) => p.label) ?? [];
+  const colorFor = (key: string) => (key === 'pfandbrief' ? cssVar('--series-2') : cssVar('--accent'));
   const unit = curve.unit ? ` ${curve.unit}` : '';
 
-  const datasets = curve.lines.map((line, i) => {
+  const lines = normalizeCurveLines(curve).filter((l) => l.when === 'Aktuell' || l.when === compareWhen);
+  // Alle Laufzeiten aller Linien, nach Länge sortiert
+  const years = new Map<string, number>();
+  for (const l of lines) for (const p of l.points) years.set(p.label, p.years);
+  const labels = [...years].sort((a, b) => a[1] - b[1]).map(([label]) => label);
+
+  const datasets = lines.map((line) => {
+    const current = line.when === 'Aktuell';
     const byLabel = new Map(line.points.map((p) => [p.label, p.v]));
-    const color = i === 0 ? accent : compareColors[(i - 1) % compareColors.length];
+    const color = colorFor(line.curve);
     return {
-      label: `${line.label} (${fmtDate(line.asOf)})`,
+      label: current ? `${line.label} (${fmtDate(line.asOf)})` : `${line.label} ${line.when} (${fmtDate(line.asOf)})`,
       data: labels.map((l) => byLabel.get(l) ?? null),
-      borderColor: color,
-      backgroundColor: color,
-      borderWidth: i === 0 ? 2.5 : 1.5,
-      borderDash: i === 0 ? [] : [5, 4],
-      pointRadius: i === 0 ? 3 : 0,
+      borderColor: current ? color : `${color}99`,
+      backgroundColor: current ? color : `${color}99`,
+      borderWidth: current ? 2.5 : 1.5,
+      borderDash: current ? [] : [5, 4],
+      pointRadius: current ? 3 : 0,
       pointHoverRadius: 4,
       tension: 0.3,
+      spanGaps: false,
     };
   });
 
   const chart = new Chart(canvas, {
     type: 'line',
-    data: { labels, datasets },
+    data: { labels: labels.map(maturityLabel), datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -128,14 +154,16 @@ export function renderCurve(id: string, canvas: HTMLCanvasElement, curve: Curve)
           labels: { color: muted, boxWidth: 16, boxHeight: 2, font: { size: 12 } },
         },
         tooltip: {
-          callbacks: { label: (ctx) => `${ctx.dataset.label}: ${fmtNumber(ctx.parsed.y, 2)}${unit}` },
+          callbacks: {
+            label: (ctx) => (ctx.parsed.y === null ? '' : `${ctx.dataset.label}: ${fmtNumber(ctx.parsed.y, 2)}${unit}`),
+          },
         },
       },
       scales: {
         x: {
           grid: { display: false },
-          ticks: { color: muted },
-          title: { display: true, text: 'Laufzeit', color: muted },
+          ticks: { color: muted, autoSkip: false, maxRotation: 0 },
+          title: { display: true, text: 'Laufzeit (EURIBOR bis 12 M, danach Anleihen)', color: muted },
         },
         y: {
           position: 'right',

@@ -1,7 +1,7 @@
 import { ArrowDownRight, ArrowUpRight, History, Minus, TriangleAlert } from 'lucide';
 import { h } from './dom';
 import { icon } from './icons';
-import { pruneCharts, renderCurve, renderLine } from './charts';
+import { normalizeCurveLines, pruneCharts, renderCurve, renderLine } from './charts';
 import { fmtDate, fmtDateTime, fmtNumber, fmtSigned, trendClass } from './format';
 import { sparkline } from './sparkline';
 import type { Curve, Instrument, MarketData, Measure, Point } from './types';
@@ -17,7 +17,7 @@ type RangeKey = (typeof RANGES)[number]['key'];
 
 const PREF_KEY = 'marktdaten-dashboard:auswahl';
 
-function readPrefs(): { selected?: string; range?: RangeKey } {
+function readPrefs(): { selected?: string; range?: RangeKey; compare?: string | null } {
   try {
     return JSON.parse(localStorage.getItem(PREF_KEY) ?? '{}');
   } catch {
@@ -27,16 +27,17 @@ function readPrefs(): { selected?: string; range?: RangeKey } {
 
 function writePrefs(): void {
   try {
-    localStorage.setItem(PREF_KEY, JSON.stringify({ selected: state.selected, range: state.range }));
+    localStorage.setItem(PREF_KEY, JSON.stringify({ selected: state.selected, range: state.range, compare: state.compare }));
   } catch {
     // Speicher nicht verfügbar – Auswahl gilt dann nur bis zum Neuladen.
   }
 }
 
 const prefs = readPrefs();
-const state: { selected?: string; range: RangeKey } = {
+const state: { selected?: string; range: RangeKey; compare: string | null } = {
   selected: prefs.selected,
   range: RANGES.some((r) => r.key === prefs.range) ? (prefs.range as RangeKey) : '6M',
+  compare: prefs.compare === undefined ? 'vor 1 Jahr' : prefs.compare,
 };
 
 let lastData: MarketData | null = null;
@@ -326,7 +327,7 @@ function rateRow(m: Measure): HTMLElement {
 function ratesPanel(rates: Instrument | undefined, curve: Curve | undefined): HTMLElement {
   const groups: Array<[string, Measure[], { error?: string; stale?: boolean } | undefined]> = [
     ['EZB', rates?.measures ?? [], rates],
-    ['Staatsanleihen (AAA)', curve?.measures ?? [], curve],
+    ['Geldmarkt & Anleihen', curve?.measures ?? [], curve],
   ];
   const list = h('div', { class: 'rates' });
   for (const [title, ms, item] of groups) {
@@ -342,13 +343,34 @@ function ratesPanel(rates: Instrument | undefined, curve: Curve | undefined): HT
 
 function curvePanel(curve: Curve | undefined): HTMLElement {
   if (!curve?.lines.length) return panel('Euro-Zinskurve', null, h('div', { class: 'empty' }, curve?.error ?? 'Keine Daten.'));
+  const lines = normalizeCurveLines(curve);
+  const compareOptions = [...new Set(lines.map((l) => l.when).filter((w) => w !== 'Aktuell'))];
+  const compare = state.compare && compareOptions.includes(state.compare) ? state.compare : null;
+
+  const tabs = h(
+    'div',
+    { class: 'tabs', role: 'tablist', 'aria-label': 'Vergleich' },
+    ...[null, ...compareOptions].map((w) => {
+      const active = w === compare;
+      const b = h('button', { type: 'button', role: 'tab', class: `tab${active ? ' active' : ''}`, 'aria-selected': String(active) }, w ?? 'Keiner');
+      b.addEventListener('click', () => {
+        state.compare = w;
+        writePrefs();
+        rerender();
+      });
+      return b;
+    }),
+  );
+
   const canvas = h('canvas', { 'aria-label': `Zinskurve ${curve.name}`, role: 'img' });
-  requestAnimationFrame(() => renderCurve('curve-chart', canvas, curve));
-  const asOf = curve.lines[0]?.asOf;
+  requestAnimationFrame(() => renderCurve('curve-chart', canvas, curve, compare));
+  const asOf = lines.filter((l) => l.when === 'Aktuell').map((l) => l.asOf).sort().at(-1);
+  const legacy = !curve.lines.some((l) => l.when);
   return panel(
     'Euro-Zinskurve',
-    `AAA-Staatsanleihen${asOf ? ` · Stand ${fmtDate(asOf, true)}` : ''}`,
+    `${legacy ? 'AAA-Staatsanleihen' : 'EURIBOR bis 12 M, danach Pfandbriefe und AAA-Staatsanleihen'}${asOf ? ` · Stand ${fmtDate(asOf, true)}` : ''}`,
     staleBadge(curve),
+    compareOptions.length ? h('div', { class: 'panel-tools' }, h('span', { class: 'muted' }, 'Vergleich:'), tabs) : null,
     h('div', { class: 'chart-box tall' }, canvas),
   );
 }
@@ -430,7 +452,7 @@ export function renderData(container: HTMLElement, data: MarketData): void {
       overview(data),
       sectionHead('Märkte', `ETFs an Xetra in EUR, Bitcoin in EUR · Quelle: ${assets[0]?.source ?? 'Yahoo Finance'}`),
       h('div', { class: 'grid-2 markets' }, watchlist(assets, selected), chartPanel(selected)),
-      sectionHead('Zinsen', `Quelle: ${rates?.source ?? curve?.source ?? 'EZB'}`),
+      sectionHead('Zinsen', `Quelle: ${[...new Set([rates?.source, ...(curve?.source ?? '').split(', ')].filter(Boolean))].join(', ') || 'EZB'}`),
       h('div', { class: 'grid-2 rates-grid' }, curvePanel(curve), ratesPanel(rates, curve)),
       sectionHead('Währungen', `Quelle: ${fx?.source ?? 'Yahoo Finance'}`),
       fxPanel(fx),

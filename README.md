@@ -7,7 +7,9 @@ Persönliches Dashboard mit stündlich aktualisierten Marktdaten.
 | ETFs (Xetra, EUR): iShares Core MSCI World, Vanguard FTSE Emerging Markets, Xtrackers MSCI World IT, Amundi Core Stoxx Europe 600; Bitcoin in EUR | Yahoo Finance (inoffizielle Schnittstelle) | nein |
 | Wechselkurse EUR → USD, GBP, JPY, CNY, PLN, SEK, NOK, RUB | Yahoo Finance, ersatzweise EZB-Referenzkurse (außer RUB) | nein |
 | EZB-Leitzinsen, €STR | EZB Data Portal | nein |
-| Euro-Zinskurve (AAA-Staatsanleihen) mit Vergleich vor 30 Tagen / 1 Jahr | EZB Data Portal | nein |
+| Euro-Zinskurve: EURIBOR (1 W – 12 M), ab 2 J. Pfandbriefe und AAA-Staatsanleihen, Vergleich vor 30 Tagen / 1 Jahr | Bundesbank (EURIBOR, Pfandbriefe), EZB (AAA) | nein |
+
+EUR-Swapsätze sind nicht enthalten: Es gibt keine kostenlose Quelle (lizenzpflichtig). Die Pfandbrief-Kurve der Bundesbank dient als frei verfügbare Näherung für das Zinsniveau von Banken. EURIBOR-Tageswerte veröffentlicht die Bundesbank mit einem Tag Verzögerung; laut Hinweis dort ist eine kommerzielle Nutzung lizenzpflichtig (EMMI).
 
 Fällt eine Quelle aus, bleibt der letzte veröffentlichte Stand stehen und wird als „Veraltet“ markiert.
 
@@ -15,7 +17,7 @@ Fällt eine Quelle aus, bleibt der letzte veröffentlichte Stand stehen und wird
 
 1. **Überblick:** EZB-Einlagezins, Rendite 10 J., Steilheit der Zinskurve (10 J. – 2 J.), EUR/USD
 2. **Märkte:** Kursliste mit Tag, 1 M, 6 M und Verlauf; Klick auf eine Zeile zeigt den Chart (1 M / 3 M / 6 M)
-3. **Zinsen:** Euro-Zinskurve mit Vergleich vor 30 Tagen und vor 1 Jahr, daneben Leitzinsen und Renditen
+3. **Zinsen:** Euro-Zinskurve (EURIBOR bis 12 M, danach Pfandbriefe und AAA-Staatsanleihen) mit wählbarem Vergleich, daneben Leitzinsen, EURIBOR und Renditen
 4. **Währungen:** Wechselkurse mit Tages-, 1-Monats- und 6-Monats-Veränderung
 
 ## Betrieb auf Cloudflare (empfohlen)
@@ -24,13 +26,13 @@ Ein Cloudflare Worker liefert die Seite aus und ruft die Daten selbst ab – ohn
 
 ```
 Cloudflare Worker „marktdaten-dashboard“
-  ├─ stündlich 3 Cron-Läufe (:05 ETFs & Bitcoin, :06 Wechselkurse, :07 EZB) → KV-Speicher
+  ├─ stündlich 4 Cron-Läufe (:05 ETFs & Bitcoin, :06 Wechselkurse, :07 EZB-Leitzinsen, :08 Zinskurve) → KV-Speicher
   ├─ GET  /data/marketdata.json → Daten aus dem KV-Speicher
   ├─ POST /api/refresh?part=…   → Button „Jetzt abrufen“ (höchstens 1× pro Minute je Bereich)
   └─ alle anderen Pfade         → statische Seite aus dist/
 ```
 
-Die Aufteilung in drei Läufe hält jeden Lauf unter dem CPU-Limit des kostenlosen Workers-Tarifs (10 ms).
+Die Aufteilung in vier Läufe hält jeden Lauf unter dem CPU-Limit des kostenlosen Workers-Tarifs (10 ms).
 
 ### Einrichtung
 

@@ -20,6 +20,6 @@
   },
   "triggers": {
     // Je ein Lauf pro Teilbereich, siehe CRON_PART in worker/index.js.
-    "crons": ["5 * * * *", "6 * * * *", "7 * * * *"]
+    "crons": ["5 * * * *", "6 * * * *", "7 * * * *", "8 * * * *"]
   }
 }

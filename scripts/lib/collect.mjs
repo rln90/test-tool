@@ -157,22 +157,38 @@ async function fetchYahooInstrument(inst, yahoo) {
   return out;
 }
 
-// ---------- EZB ----------
+// ---------- EZB und Bundesbank (SDMX-JSON) ----------
 
 /**
- * Lädt eine oder mehrere EZB-Reihen (SDMX-JSON, nur Werte) → Map: Wert der gewählten Dimension → [{t, v}] aufsteigend.
- * params: z. B. { startPeriod: '2026-01-01' } oder { lastNObservations: 1 }.
+ * Lädt eine oder mehrere SDMX-Reihen → Map: Wert der unterscheidenden Dimension → [{t, v}] aufsteigend.
+ * dimIndex: Position dieser Dimension im Reihenschlüssel; ohne Angabe die einzige Dimension mit mehreren Werten
+ * (sonst die letzte). Leere Zeiträume (HTTP 404) ergeben eine leere Map.
  */
-async function ecb(flow, key, params, dimIndex = -1) {
-  const query = new URLSearchParams({ format: 'jsondata', detail: 'dataonly', ...params });
-  const url = `${config.ecb.baseUrl}/${flow}/${key}?${query}`;
-  const res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(TIMEOUT) });
-  if (!res.ok) throw new Error(`EZB ${flow}/${key}: HTTP ${res.status}`);
-  const json = await res.json();
+async function sdmx(name, url, dimIndex) {
+  let res;
+  for (let attempt = 1; ; attempt++) {
+    res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(TIMEOUT) });
+    // Die Bundesbank antwortet bei vielen gleichzeitigen Anfragen gelegentlich mit 400/429 – kurz warten und wiederholen.
+    if (attempt < 3 && (res.status === 400 || res.status === 429 || res.status >= 500)) {
+      await sleep(800 * attempt);
+      continue;
+    }
+    break;
+  }
+  if (res.status === 404) return new Map();
+  if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
+  const raw = await res.json();
+  const json = raw.data ?? raw; // Bundesbank verpackt die Antwort in „data“
   const dims = json.structure.dimensions;
   const times = dims.observation[0].values.map((v) => v.id);
-  const dim = dims.series.at(dimIndex).values.map((v) => v.id);
-  const pos = dimIndex < 0 ? dims.series.length + dimIndex : dimIndex;
+  let pos = dimIndex;
+  if (pos === undefined) {
+    const varying = dims.series.map((d, i) => (d.values.length > 1 ? i : -1)).filter((i) => i >= 0);
+    pos = varying.length === 1 ? varying[0] : dims.series.length - 1;
+  } else if (pos < 0) {
+    pos = dims.series.length + pos;
+  }
+  const dim = dims.series[pos].values.map((v) => v.id);
   const result = new Map();
   for (const [sKey, s] of Object.entries(json.dataSets[0].series ?? {})) {
     const idx = Number(sKey.split(':')[pos]);
@@ -183,6 +199,41 @@ async function ecb(flow, key, params, dimIndex = -1) {
     result.set(dim[idx], pts);
   }
   return result;
+}
+
+/** EZB Data Portal. params: z. B. { startPeriod: '2026-01-01' } oder { lastNObservations: 1 }. */
+function ecb(flow, key, params, dimIndex = -1) {
+  const query = new URLSearchParams({ format: 'jsondata', detail: 'dataonly', ...params });
+  return sdmx(`EZB ${flow}`, `${config.ecb.baseUrl}/${flow}/${key}?${query}`, dimIndex);
+}
+
+/** Begrenzt gleichzeitige Anfragen (je Abruf neu angelegt, siehe Hinweis bei createYahooClient). */
+function createLimiter(max) {
+  let active = 0;
+  const waiting = [];
+  const next = () => {
+    if (active >= max || !waiting.length) return;
+    active++;
+    const { task, resolve, reject } = waiting.shift();
+    task()
+      .then(resolve, reject)
+      .finally(() => {
+        active--;
+        next();
+      });
+  };
+  return (task) =>
+    new Promise((resolve, reject) => {
+      waiting.push({ task, resolve, reject });
+      next();
+    });
+}
+
+/** Bundesbank-Statistik (Zeitreihen-Datenbank); limit begrenzt gleichzeitige Anfragen. */
+function bundesbank(flow, key, params, limit) {
+  const query = new URLSearchParams({ detail: 'dataonly', ...params });
+  const run = () => sdmx(`Bundesbank ${flow}`, `${config.bundesbank.baseUrl}/${flow}/${key}?${query}`);
+  return limit ? limit(run) : run();
 }
 
 async function fetchEcbRates() {
@@ -218,59 +269,110 @@ async function fetchEcbRates() {
 
 function maturityYears(m) {
   const n = Number(m.slice(0, -1));
+  if (m.endsWith('W')) return n / 52;
   return m.endsWith('M') ? n / 12 : n;
 }
 
-async function fetchEcbCurve() {
-  const cfg = config.ecb.curve;
-  const out = { id: cfg.id, name: cfg.name, unit: '%', source: 'EZB', lines: [], measures: [] };
-  try {
-    const prefix = cfg.seriesPrefix;
-    const sr = prefix.split('.').at(-1); // „SR_“
-    const keyFor = (mats) => prefix + mats.join(`+${sr}`);
-    const allKey = keyFor(cfg.maturities);
-    const highlight = [...new Set([...(cfg.highlight ?? []), '2Y', '10Y'])].filter((m) => cfg.maturities.includes(m));
+/** Lädt einen Abschnitt der Zinskurve (z. B. EURIBOR oder Pfandbriefe) → Map: Laufzeit („3M“, „10Y“) → Reihe. */
+async function curveSegment(seg, maturities, params, limit) {
+  const codes = maturities.map((m) => seg.maturities[m]);
+  const key = seg.key.replace('{m}', codes.join('+'));
+  const map = seg.source === 'bundesbank' ? await bundesbank(seg.flow, key, params, limit) : await ecb(seg.flow, key, params, undefined);
+  // Bei nur einer angefragten Laufzeit gibt es keine unterscheidende Dimension – direkt zuordnen.
+  if (maturities.length === 1) return new Map(map.size ? [[maturities[0], [...map.values()][0]]] : []);
+  const byCode = new Map(Object.entries(seg.maturities).map(([m, c]) => [c, m]));
+  return new Map([...map].map(([code, series]) => [byCode.get(code) ?? code, series]));
+}
 
-    // Nur die Ausschnitte laden, die gebraucht werden: aktueller Stand, Vergleichsstände, Verlauf der hervorgehobenen Laufzeiten.
-    const latestMap = await ecb(cfg.flow, allKey, { lastNObservations: 1 });
-    const latest = [...latestMap.values()].map((s) => s.at(-1)?.t).filter(Boolean).sort().at(-1);
-    if (!latest) throw new Error('keine Zinskurvendaten erhalten');
-    const compareTargets = (cfg.compareDaysAgo ?? []).map((d) => ({
-      d,
-      target: isoDate(new Date(new Date(latest).getTime() - d * DAY)),
-    }));
-    const [compareMaps, historyMap] = await Promise.all([
+/**
+ * Euro-Zinskurve: kurzes Ende aus EURIBOR, ab 2 Jahren je eine Linie pro langem Abschnitt
+ * (Pfandbriefe der Bundesbank, AAA-Staatsanleihen der EZB) – aktuell und zu Vergleichsterminen.
+ */
+async function fetchCurve() {
+  const cfg = config.curve;
+  const out = { id: cfg.id, name: cfg.name, unit: '%', source: cfg.sourceLabel, lines: [], measures: [] };
+  const segments = [cfg.short, ...cfg.long];
+  const limit = createLimiter(2);
+  const errors = [];
+  const safe = (seg, p) =>
+    p.catch((err) => {
+      errors.push(`${seg.label}: ${errMsg(err)}`);
+      return new Map();
+    });
+
+  try {
+    // 1) aktueller Stand je Abschnitt
+    const latest = await Promise.all(
+      segments.map((seg) => safe(seg, curveSegment(seg, Object.keys(seg.maturities), { lastNObservations: 1 }, limit))),
+    );
+    const lastDate = (m) => [...m.values()].map((s) => s.at(-1)?.t).filter(Boolean).sort().at(-1);
+    const refDate = lastDate(latest[0]) ?? latest.map(lastDate).filter(Boolean).sort().at(-1);
+    if (!refDate) throw new Error(errors.join(' · ') || 'keine Zinskurvendaten erhalten');
+
+    // 2) Vergleichsstände (kleines Fenster vor dem Stichtag) und Verlauf der hervorgehobenen Laufzeiten
+    const compares = (cfg.compareDaysAgo ?? []).map((d) => ({ d, target: isoDate(new Date(new Date(refDate).getTime() - d * DAY)) }));
+    const historyBySeg = new Map();
+    for (const m of [...(cfg.measures ?? []), ...(cfg.spread ? [{ segment: cfg.spread.segment, maturity: cfg.spread.long }, { segment: cfg.spread.segment, maturity: cfg.spread.short }] : [])]) {
+      const list = historyBySeg.get(m.segment) ?? new Set();
+      list.add(m.maturity);
+      historyBySeg.set(m.segment, list);
+    }
+    const segById = new Map(segments.map((seg) => [seg.id, seg]));
+    const [compareMaps, histories] = await Promise.all([
       Promise.all(
-        compareTargets.map(({ target }) =>
-          ecb(cfg.flow, allKey, {
-            startPeriod: isoDate(new Date(new Date(target).getTime() - 10 * DAY)),
-            endPeriod: target,
-          }),
+        compares.map(({ target }) =>
+          Promise.all(
+            segments.map((seg) =>
+              safe(
+                seg,
+                curveSegment(seg, Object.keys(seg.maturities), {
+                  startPeriod: isoDate(new Date(new Date(target).getTime() - 10 * DAY)),
+                  endPeriod: target,
+                }, limit),
+              ),
+            ),
+          ),
         ),
       ),
-      ecb(cfg.flow, keyFor(highlight), { startPeriod: daysAgo(historyDays) }),
+      Promise.all(
+        [...historyBySeg].map(async ([segId, mats]) => {
+          const seg = segById.get(segId);
+          return [segId, seg ? await safe(seg, curveSegment(seg, [...mats], { startPeriod: daysAgo(historyDays) }, limit)) : new Map()];
+        }),
+      ),
     ]);
+    const history = new Map(histories);
 
-    const lineFrom = (map, date, label) => {
-      const points = [];
+    // 3) Linien: EURIBOR-Punkte + Punkte des jeweiligen langen Abschnitts
+    const pointsAt = (seg, map, date) => {
+      const pts = [];
       let asOf = '';
-      for (const m of cfg.maturities) {
-        const p = valueAtOrBefore(map.get(`SR_${m}`) ?? [], date);
+      for (const m of Object.keys(seg.maturities)) {
+        const p = valueAtOrBefore(map.get(m) ?? [], date);
         if (p) {
-          points.push({ label: m, years: maturityYears(m), v: p.v });
+          pts.push({ label: m, years: maturityYears(m), v: p.v });
           if (p.t > asOf) asOf = p.t;
         }
       }
-      return { label, asOf, points };
+      return { pts, asOf };
     };
-    out.lines.push(lineFrom(latestMap, latest, 'Aktuell'));
-    compareTargets.forEach(({ d, target }, i) => {
-      const label = d >= 365 ? `vor ${Math.round(d / 365)} Jahr${d >= 730 ? 'en' : ''}` : `vor ${d} Tagen`;
-      const line = lineFrom(compareMaps[i], target, label);
-      if (line.points.length) out.lines.push(line);
+    const addLines = (maps, date, when) => {
+      const short = pointsAt(cfg.short, maps[0], date);
+      cfg.long.forEach((seg, i) => {
+        const long = pointsAt(seg, maps[i + 1], date);
+        if (!long.pts.length) return;
+        const asOf = [short.asOf, long.asOf].filter(Boolean).sort().at(-1);
+        out.lines.push({ label: seg.label, curve: seg.id, when, asOf, points: [...short.pts, ...long.pts] });
+      });
+    };
+    addLines(latest, '9999-12-31', 'Aktuell');
+    compares.forEach(({ d, target }, i) => {
+      const when = d >= 365 ? `vor ${Math.round(d / 365)} Jahr${d >= 730 ? 'en' : ''}` : `vor ${d} Tagen`;
+      addLines(compareMaps[i], target, when);
     });
 
-    const recent = (m) => historyMap.get(`SR_${m}`) ?? [];
+    // 4) Kennzahlen mit Verlauf
+    const series = (segId, m) => (history.get(segId)?.get(m) ?? []);
     const rateMeasure = (key, label, s, unit, extra = {}) => ({
       key,
       label,
@@ -284,20 +386,22 @@ async function fetchEcbCurve() {
       series: s,
       ...extra,
     });
-    for (const m of cfg.highlight ?? []) {
-      const s = recent(m);
-      if (s.length) {
-        out.measures.push(
-          rateMeasure(`y${m}`, `Rendite ${m.replace('Y', ' J.').replace('M', ' M.')}`, s, '%', { deltaUnit: '%-Pkt.' }),
-        );
-      }
+    for (const m of cfg.measures ?? []) {
+      const s = series(m.segment, m.maturity);
+      if (s.length) out.measures.push(rateMeasure(m.key, m.label, s, '%', { deltaUnit: '%-Pkt.', decimals: m.decimals ?? 2 }));
     }
-    // Steilheit der Kurve: 10 J. minus 2 J.
-    const s2 = new Map(recent('2Y').map((p) => [p.t, p.v]));
-    const spread = recent('10Y')
-      .filter((p) => s2.has(p.t))
-      .map((p) => ({ t: p.t, v: p.v - s2.get(p.t) }));
-    if (spread.length) out.measures.push(rateMeasure('spread10y2y', 'Spread 10 J. – 2 J.', spread, '%-Pkt.'));
+    if (cfg.spread) {
+      const sp = cfg.spread;
+      const shortMap = new Map(series(sp.segment, sp.short).map((p) => [p.t, p.v]));
+      const spread = series(sp.segment, sp.long)
+        .filter((p) => shortMap.has(p.t))
+        .map((p) => ({ t: p.t, v: p.v - shortMap.get(p.t) }));
+      if (spread.length) out.measures.push(rateMeasure(sp.key, sp.label, spread, '%-Pkt.'));
+    }
+    if (errors.length) {
+      console.error(`[${cfg.id}] ${errors.join(' · ')}`);
+      if (!out.lines.length) out.error = errors.join(' · ');
+    }
   } catch (err) {
     out.error = errMsg(err);
     console.error(`[${cfg.id}] ${out.error}`);
@@ -380,7 +484,7 @@ function withFallback(items, previousItems) {
 export class NoDataError extends Error {}
 
 /** Teilbereiche, die einzeln abgerufen werden können (z. B. je ein Cloudflare-Cron-Lauf). */
-export const PARTS = ['kurse', 'fx', 'ezb'];
+export const PARTS = ['kurse', 'fx', 'ezb', 'kurve'];
 
 /**
  * Holt die gewünschten Teilbereiche (Standard: alle). Ausgefallene Bereiche werden durch den
@@ -401,7 +505,7 @@ export async function collectData(cfg, previous = null, parts = PARTS) {
     Promise.all(wantedInstruments.map((inst) => fetchYahooInstrument(inst, yahoo))),
     want('fx') && config.yahoo?.fx ? fetchFx(yahoo) : null,
     want('ezb') && config.ecb?.rates ? fetchEcbRates() : null,
-    want('ezb') && config.ecb?.curve ? fetchEcbCurve() : null,
+    want('kurve') && config.curve ? fetchCurve() : null,
   ]);
 
   const instruments = withFallback([...yahooItems, rates, fx].filter(Boolean), previous?.instruments);
@@ -413,7 +517,7 @@ export async function collectData(cfg, previous = null, parts = PARTS) {
   }
   return {
     generatedAt: new Date().toISOString(),
-    source: 'Yahoo Finance, EZB',
+    source: 'Yahoo Finance, EZB, Bundesbank',
     instruments,
     curves,
   };
@@ -426,9 +530,10 @@ export function mergeParts(byPart) {
   const pick = (p) => byPart[p]?.instruments ?? [];
   return {
     generatedAt: got.map((d) => d.generatedAt).sort().at(-1),
-    source: 'Yahoo Finance, EZB',
+    source: 'Yahoo Finance, EZB, Bundesbank',
     instruments: [...pick('kurse'), ...pick('ezb'), ...pick('fx')],
-    curves: byPart.ezb?.curves ?? [],
+    // Ältere Datenstände hatten die Zinskurve im Teilbereich „ezb“.
+    curves: byPart.kurve?.curves ?? byPart.ezb?.curves ?? [],
   };
 }
 
