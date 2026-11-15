@@ -31,12 +31,16 @@ Die Aufteilung in drei Läufe hält jeden Lauf unter dem CPU-Limit des kostenlos
 2. Projektname: `marktdaten-dashboard` (muss zu `wrangler.jsonc` passen), Branch `main`,
    Build command `npm run build`, Deploy command `npx wrangler deploy`.
 3. Nach dem ersten Deploy die angezeigte `*.workers.dev`-Adresse öffnen und „Jetzt abrufen“ klicken.
-   Der KV-Speicher wird beim ersten Deploy automatisch angelegt.
+   Die IDs der KV-Speicher stehen in `wrangler.jsonc` (Produktiv- und Vorschau-Speicher).
 4. Optional, damit nur du die Seite sehen kannst: *Zero Trust → Access → Applications* → Self-hosted-Anwendung für die
    Worker-Adresse, Richtlinie „Allow“ mit deiner E-Mail-Adresse, Anmeldung per One-time PIN (kostenlos bis 50 Nutzer).
 5. Danach den GitHub-Workflow abschalten: *Actions → Dashboard aktualisieren → ⋯ → Disable workflow*.
 
 Jeder Push auf `main` baut und veröffentlicht automatisch neu.
+
+**Vorschau:** Für jeden Pull Request legt Cloudflare eine Vorschau-Version an und schreibt ihre Adresse als Kommentar in den
+Pull Request. Vorschauen nutzen den eigenen KV-Speicher `marktdaten-dashboard-preview` und haben keine stündlichen Läufe –
+Daten dort per „Jetzt abrufen“ laden. Vorschau-Adressen sind öffentlich erreichbar.
 
 ```bash
 npm run cf:dev     # Worker lokal starten (Cron testen: http://localhost:8787/__scheduled?cron=5+*+*+*+*)
