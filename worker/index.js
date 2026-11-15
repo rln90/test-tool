@@ -75,7 +75,9 @@ async function handleRefresh(request, env) {
 
   const previous = await readPart(env, part);
   const age = previous ? Date.now() - Date.parse(previous.generatedAt) : Infinity;
-  if (age < MIN_REFRESH_MS) {
+  // Nach einem fehlgeschlagenen Abruf darf sofort erneut versucht werden.
+  const hadErrors = previous && [...previous.instruments, ...previous.curves].some((x) => x.error);
+  if (age < MIN_REFRESH_MS && !hadErrors) {
     return json({ ok: false, message: 'Die Daten wurden gerade erst abgerufen. Bitte eine Minute warten.' }, 429);
   }
   return json(await updatePart(env, part));
