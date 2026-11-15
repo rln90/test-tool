@@ -138,7 +138,7 @@ function parseYahoo(result) {
 }
 
 async function fetchYahooInstrument(inst, yahoo) {
-  const out = { id: inst.id, name: inst.name, note: inst.note, ticker: inst.symbol, source: 'Yahoo Finance', measures: [] };
+  const out = { id: inst.id, kind: 'asset', group: inst.group, name: inst.name, note: inst.note, ticker: inst.symbol, source: 'Yahoo Finance', measures: [] };
   try {
     const y = parseYahoo(await yahoo(inst.symbol));
     if (!y.price) throw new Error('kein Kurs erhalten');
@@ -187,7 +187,7 @@ async function ecb(flow, key, params, dimIndex = -1) {
 
 async function fetchEcbRates() {
   const cfg = config.ecb.rates;
-  const out = { id: cfg.id, name: cfg.name, source: 'EZB', measures: [] };
+  const out = { id: cfg.id, kind: 'rates', name: cfg.name, source: 'EZB', measures: [] };
   const start = daysAgo(historyDays);
   const results = await Promise.allSettled(
     cfg.series.map(async (s) => {
@@ -322,7 +322,7 @@ async function ecbFxFallback(codes) {
 
 async function fetchFx(yahoo) {
   const cfg = config.yahoo.fx;
-  const out = { id: cfg.id, name: cfg.name, note: cfg.note, source: 'Yahoo Finance', measures: [] };
+  const out = { id: cfg.id, kind: 'fx', name: cfg.name, note: cfg.note, source: 'Yahoo Finance', measures: [] };
   const results = await Promise.all(
     cfg.currencies.map((c) =>
       yahoo(`${cfg.base}${c.code}=X`)
@@ -380,7 +380,7 @@ function withFallback(items, previousItems) {
 export class NoDataError extends Error {}
 
 /** Teilbereiche, die einzeln abgerufen werden können (z. B. je ein Cloudflare-Cron-Lauf). */
-export const PARTS = ['kurse', 'etf', 'fx', 'ezb'];
+export const PARTS = ['kurse', 'fx', 'ezb'];
 
 /**
  * Holt die gewünschten Teilbereiche (Standard: alle). Ausgefallene Bereiche werden durch den
@@ -427,7 +427,7 @@ export function mergeParts(byPart) {
   return {
     generatedAt: got.map((d) => d.generatedAt).sort().at(-1),
     source: 'Yahoo Finance, EZB',
-    instruments: [...pick('kurse'), ...pick('etf'), ...pick('ezb'), ...pick('fx')],
+    instruments: [...pick('kurse'), ...pick('ezb'), ...pick('fx')],
     curves: byPart.ezb?.curves ?? [],
   };
 }

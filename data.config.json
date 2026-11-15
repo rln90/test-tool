@@ -4,37 +4,41 @@
     "baseUrl": "https://query1.finance.yahoo.com/v8/finance/chart",
     "pauseMs": 400,
     "instruments": [
-      { "id": "msci-world", "name": "MSCI World", "note": "Kursindex (Preisindex)", "symbol": "^990100-USD-STRD", "currency": "USD" },
-      { "id": "toyota", "name": "Toyota Motor", "note": "Börse Tokio", "symbol": "7203.T" },
       {
         "id": "core-msci-world",
-        "name": "iShares Core MSCI World",
-        "note": "USD (Acc) · Xetra",
+        "name": "Core MSCI World",
+        "note": "iShares · USD (Acc)",
         "symbol": "EUNL.DE",
-        "part": "etf"
+        "group": "ETF"
       },
       {
         "id": "ftse-em",
-        "name": "Vanguard FTSE Emerging Markets",
-        "note": "USD (Acc) · Xetra",
+        "name": "FTSE Emerging Markets",
+        "note": "Vanguard · USD (Acc)",
         "symbol": "VFEA.DE",
-        "part": "etf"
+        "group": "ETF"
       },
       {
         "id": "msci-world-it",
-        "name": "Xtrackers MSCI World Information Technology",
-        "note": "USD (Acc) · Xetra",
+        "name": "MSCI World Information Technology",
+        "note": "Xtrackers · USD (Acc)",
         "symbol": "XDWT.DE",
-        "part": "etf"
+        "group": "ETF"
       },
       {
         "id": "stoxx-600",
-        "name": "Amundi Core Stoxx Europe 600",
-        "note": "EUR (Acc) · Xetra",
+        "name": "Core Stoxx Europe 600",
+        "note": "Amundi · EUR (Acc)",
         "symbol": "LYP6.DE",
-        "part": "etf"
+        "group": "ETF"
       },
-      { "id": "bitcoin", "name": "Bitcoin", "note": "in Euro, Handel rund um die Uhr", "symbol": "BTC-EUR", "part": "etf" }
+      {
+        "id": "bitcoin",
+        "name": "Bitcoin",
+        "note": "in Euro, Handel rund um die Uhr",
+        "symbol": "BTC-EUR",
+        "group": "Krypto"
+      }
     ],
     "fx": {
       "id": "wechselkurse",
@@ -42,14 +46,46 @@
       "note": "1 EUR = … Fremdwährung",
       "base": "EUR",
       "currencies": [
-        { "code": "USD", "label": "US-Dollar", "decimals": 4 },
-        { "code": "GBP", "label": "Pfund", "decimals": 4 },
-        { "code": "JPY", "label": "Yen", "decimals": 2 },
-        { "code": "CNY", "label": "Renminbi", "decimals": 4 },
-        { "code": "PLN", "label": "Złoty", "decimals": 4 },
-        { "code": "SEK", "label": "Schw. Krone", "decimals": 4 },
-        { "code": "NOK", "label": "Norw. Krone", "decimals": 4 },
-        { "code": "RUB", "label": "Rubel", "decimals": 2 }
+        {
+          "code": "USD",
+          "label": "US-Dollar",
+          "decimals": 4
+        },
+        {
+          "code": "GBP",
+          "label": "Pfund",
+          "decimals": 4
+        },
+        {
+          "code": "JPY",
+          "label": "Yen",
+          "decimals": 2
+        },
+        {
+          "code": "CNY",
+          "label": "Renminbi",
+          "decimals": 4
+        },
+        {
+          "code": "PLN",
+          "label": "Złoty",
+          "decimals": 4
+        },
+        {
+          "code": "SEK",
+          "label": "Schw. Krone",
+          "decimals": 4
+        },
+        {
+          "code": "NOK",
+          "label": "Norw. Krone",
+          "decimals": 4
+        },
+        {
+          "code": "RUB",
+          "label": "Rubel",
+          "decimals": 2
+        }
       ]
     }
   },
@@ -60,9 +96,24 @@
       "id": "ezb-zinsen",
       "name": "EZB-Leitzinsen & €STR",
       "series": [
-        { "key": "dfr", "label": "Einlagefazilität", "flow": "FM", "series": "D.U2.EUR.4F.KR.DFR.LEV" },
-        { "key": "mro", "label": "Hauptrefinanzierung", "flow": "FM", "series": "D.U2.EUR.4F.KR.MRR_FR.LEV" },
-        { "key": "estr", "label": "€STR", "flow": "EST", "series": "B.EU000A2X2A25.WT" }
+        {
+          "key": "dfr",
+          "label": "Einlagefazilität",
+          "flow": "FM",
+          "series": "D.U2.EUR.4F.KR.DFR.LEV"
+        },
+        {
+          "key": "mro",
+          "label": "Hauptrefinanzierung",
+          "flow": "FM",
+          "series": "D.U2.EUR.4F.KR.MRR_FR.LEV"
+        },
+        {
+          "key": "estr",
+          "label": "€STR",
+          "flow": "EST",
+          "series": "B.EU000A2X2A25.WT"
+        }
       ]
     },
     "curve": {
@@ -70,9 +121,27 @@
       "name": "Euro-Zinskurve (AAA-Staatsanleihen)",
       "flow": "YC",
       "seriesPrefix": "B.U2.EUR.4F.G_N_A.SV_C_YM.SR_",
-      "maturities": ["3M", "6M", "1Y", "2Y", "3Y", "5Y", "7Y", "10Y", "15Y", "20Y", "30Y"],
-      "compareDaysAgo": [30, 365],
-      "highlight": ["2Y", "10Y"]
+      "maturities": [
+        "3M",
+        "6M",
+        "1Y",
+        "2Y",
+        "3Y",
+        "5Y",
+        "7Y",
+        "10Y",
+        "15Y",
+        "20Y",
+        "30Y"
+      ],
+      "compareDaysAgo": [
+        30,
+        365
+      ],
+      "highlight": [
+        "2Y",
+        "10Y"
+      ]
     }
   }
 }
