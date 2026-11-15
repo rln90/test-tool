@@ -5,6 +5,7 @@ Persönliches Dashboard mit stündlich aktualisierten Marktdaten.
 | Bereich | Quelle | Key |
 |---|---|---|
 | MSCI World (Kursindex, USD), Toyota (Tokio) | Yahoo Finance (inoffizielle Schnittstelle) | nein |
+| ETFs (Xetra, EUR): iShares Core MSCI World, Vanguard FTSE Emerging Markets, Xtrackers MSCI World IT, Amundi Core Stoxx Europe 600; Bitcoin in EUR | Yahoo Finance | nein |
 | Wechselkurse EUR → USD, GBP, JPY, CNY, PLN, SEK, NOK, RUB | Yahoo Finance, ersatzweise EZB-Referenzkurse (außer RUB) | nein |
 | EZB-Leitzinsen, €STR | EZB Data Portal | nein |
 | Euro-Zinskurve (AAA-Staatsanleihen) mit Vergleich vor 30 Tagen / 1 Jahr | EZB Data Portal | nein |
@@ -17,13 +18,13 @@ Ein Cloudflare Worker liefert die Seite aus und ruft die Daten selbst ab – ohn
 
 ```
 Cloudflare Worker „marktdaten-dashboard“
-  ├─ stündlich 3 Cron-Läufe (:05 Kurse, :06 Wechselkurse, :07 EZB) → KV-Speicher
+  ├─ stündlich 4 Cron-Läufe (:05 Kurse, :06 Wechselkurse, :07 EZB, :08 ETFs & Bitcoin) → KV-Speicher
   ├─ GET  /data/marketdata.json → Daten aus dem KV-Speicher
   ├─ POST /api/refresh?part=…   → Button „Jetzt abrufen“ (höchstens 1× pro Minute je Bereich)
   └─ alle anderen Pfade         → statische Seite aus dist/
 ```
 
-Die Aufteilung in drei Läufe hält jeden Lauf unter dem CPU-Limit des kostenlosen Workers-Tarifs (10 ms).
+Die Aufteilung in vier Läufe hält jeden Lauf unter dem CPU-Limit des kostenlosen Workers-Tarifs (10 ms).
 
 ### Einrichtung
 

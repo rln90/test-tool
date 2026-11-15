@@ -5,7 +5,36 @@
     "pauseMs": 400,
     "instruments": [
       { "id": "msci-world", "name": "MSCI World", "note": "Kursindex (Preisindex)", "symbol": "^990100-USD-STRD", "currency": "USD" },
-      { "id": "toyota", "name": "Toyota Motor", "note": "Börse Tokio", "symbol": "7203.T" }
+      { "id": "toyota", "name": "Toyota Motor", "note": "Börse Tokio", "symbol": "7203.T" },
+      {
+        "id": "core-msci-world",
+        "name": "iShares Core MSCI World",
+        "note": "USD (Acc) · Xetra",
+        "symbol": "EUNL.DE",
+        "part": "etf"
+      },
+      {
+        "id": "ftse-em",
+        "name": "Vanguard FTSE Emerging Markets",
+        "note": "USD (Acc) · Xetra",
+        "symbol": "VFEA.DE",
+        "part": "etf"
+      },
+      {
+        "id": "msci-world-it",
+        "name": "Xtrackers MSCI World Information Technology",
+        "note": "USD (Acc) · Xetra",
+        "symbol": "XDWT.DE",
+        "part": "etf"
+      },
+      {
+        "id": "stoxx-600",
+        "name": "Amundi Core Stoxx Europe 600",
+        "note": "EUR (Acc) · Xetra",
+        "symbol": "LYP6.DE",
+        "part": "etf"
+      },
+      { "id": "bitcoin", "name": "Bitcoin", "note": "in Euro, Handel rund um die Uhr", "symbol": "BTC-EUR", "part": "etf" }
     ],
     "fx": {
       "id": "wechselkurse",
