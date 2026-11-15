@@ -1,6 +1,6 @@
 import './style.css';
 import { CloudDownload, Info, Pause, Play, RefreshCw, TriangleAlert } from 'lucide';
-import { loadConfig, loadMarketData, refreshViaWorker } from './api';
+import { HttpError, loadConfig, loadMarketData, refreshViaWorker } from './api';
 import { h } from './dom';
 import { icon } from './icons';
 import { renderData } from './render';
@@ -57,6 +57,8 @@ let lastGenerated = '';
 let lastSource = '';
 let loading = false;
 let waitingSince = 0;
+/** Wurde bei leerem Datenspeicher schon automatisch ein erster Abruf gestartet? */
+let autoFetchStarted = false;
 
 function showInfo(text: string | null): void {
   infoBox.hidden = !text;
@@ -114,12 +116,25 @@ async function refresh(): Promise<void> {
     lastSource = data.source;
     renderData(content, data);
   } catch (err) {
-    errorBox.replaceChildren(
-      icon(TriangleAlert),
-      `Daten konnten nicht geladen werden: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    errorBox.hidden = false;
-    if (!lastGenerated) status.textContent = 'Keine Daten geladen.';
+    if (err instanceof HttpError && err.status === 503) {
+      // Noch keine Daten gespeichert (z. B. neue Vorschau-Version): kein Fehler, sondern erster Abruf.
+      errorBox.hidden = true;
+      if (!lastGenerated) status.textContent = 'Noch keine Daten vorhanden.';
+      if (config.refreshUrl && !autoFetchStarted) {
+        autoFetchStarted = true;
+        showInfo('Noch keine Daten vorhanden. Der erste Abruf startet automatisch …');
+        window.setTimeout(() => void startFetch(), 0);
+      } else if (!config.refreshUrl) {
+        showInfo(err.message);
+      }
+    } else {
+      errorBox.replaceChildren(
+        icon(TriangleAlert),
+        `Daten konnten nicht geladen werden: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      errorBox.hidden = false;
+      if (!lastGenerated) status.textContent = 'Keine Daten geladen.';
+    }
   } finally {
     loading = false;
     refreshBtn.disabled = false;
