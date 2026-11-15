@@ -5,7 +5,7 @@ Persönliches Dashboard mit stündlich aktualisierten Marktdaten.
 | Bereich | Quelle | Key |
 |---|---|---|
 | MSCI World (Kursindex, USD), Toyota (Tokio) | Yahoo Finance (inoffizielle Schnittstelle) | nein |
-| Wechselkurse EUR → USD, GBP, JPY, CNY, CNH, PLN, SEK, NOK, RUB | Yahoo Finance, ersatzweise EZB-Referenzkurse (außer RUB, CNH) | nein |
+| Wechselkurse EUR → USD, GBP, JPY, CNY, PLN, SEK, NOK, RUB | Yahoo Finance, ersatzweise EZB-Referenzkurse (außer RUB) | nein |
 | EZB-Leitzinsen, €STR | EZB Data Portal | nein |
 | Euro-Zinskurve (AAA-Staatsanleihen) mit Vergleich vor 30 Tagen / 1 Jahr | EZB Data Portal | nein |
 
