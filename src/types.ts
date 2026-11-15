@@ -64,6 +64,10 @@ export interface CurveLine {
   label: string;
   asOf: string;
   points: CurvePoint[];
+  /** Welche Kurve (z. B. „pfandbrief“, „aaa“); fehlt bei älteren Datenständen. */
+  curve?: string;
+  /** Stichtag als Text: „Aktuell“, „vor 30 Tagen“ …; fehlt bei älteren Datenständen. */
+  when?: string;
 }
 
 /** Zinskurve: erste Linie = aktuell, weitere = Vergleichsstände. */

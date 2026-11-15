@@ -45,6 +45,8 @@ app.append(
     h('a', { href: 'https://finance.yahoo.com', target: '_blank', rel: 'noopener' }, 'Yahoo Finance'),
     ', ',
     h('a', { href: 'https://data.ecb.europa.eu', target: '_blank', rel: 'noopener' }, 'EZB Data Portal'),
+    ', ',
+    h('a', { href: 'https://www.bundesbank.de/de/statistiken/zeitreihen-datenbanken', target: '_blank', rel: 'noopener' }, 'Deutsche Bundesbank'),
     ' · Neue Daten werden stündlich abgerufen.',
   ),
 );

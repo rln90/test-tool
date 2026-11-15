@@ -9,6 +9,7 @@
   --grid: #eceef2;
   --accent: #2f5bd3;
   --accent-soft: #edf2fd;
+  --series-2: #0e8a7e;
   --up: #157a48;
   --up-bg: #e5f4ec;
   --down: #c33a2e;
@@ -36,6 +37,7 @@
     --grid: #232832;
     --accent: #7c9cf0;
     --accent-soft: #1c2640;
+    --series-2: #39c4b4;
     --up: #3ccf86;
     --up-bg: #12301f;
     --down: #f2685c;
@@ -62,6 +64,7 @@
   --grid: #232832;
   --accent: #7c9cf0;
   --accent-soft: #1c2640;
+  --series-2: #39c4b4;
   --up: #3ccf86;
   --up-bg: #12301f;
   --down: #f2685c;
@@ -176,6 +179,9 @@ h1 { font-size: 20px; margin: 0 0 2px; letter-spacing: -0.01em; }
 .markets { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: stretch; }
 .markets .chart-panel { display: flex; flex-direction: column; }
 .markets .chart-panel .chart-box { flex: 1; min-height: 240px; }
+.rates-grid { align-items: stretch; }
+.rates-grid > .panel:first-child { display: flex; flex-direction: column; }
+.rates-grid > .panel:first-child .chart-box { flex: 1; min-height: 320px; }
 .rates-grid { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
 @media (max-width: 960px) {
   .markets, .rates-grid { grid-template-columns: minmax(0, 1fr); }
@@ -269,7 +275,10 @@ h1 { font-size: 20px; margin: 0 0 2px; letter-spacing: -0.01em; }
 .tab.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
 
 .chart-box { position: relative; height: 260px; margin-top: 12px; }
-.chart-box.tall { height: 300px; margin-top: 4px; }
+.chart-box.tall { height: 320px; margin-top: 12px; }
+.panel-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.panel-tools .tabs { margin-top: 0; }
+.panel-tools .muted { font-size: 12px; }
 
 .stats {
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px;

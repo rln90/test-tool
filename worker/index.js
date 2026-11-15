@@ -1,7 +1,7 @@
 /**
  * Cloudflare Worker: liefert das Dashboard aus (statische Dateien aus dist/) und hält die Daten aktuell.
  *
- *  - Stündlich laufen drei Cron-Jobs, je einer pro Teilbereich (ETFs & Bitcoin, Wechselkurse, EZB).
+ *  - Stündlich laufen vier Cron-Jobs, je einer pro Teilbereich (ETFs & Bitcoin, Wechselkurse, EZB-Leitzinsen, Zinskurve).
  *    Die Aufteilung hält jeden Lauf unter dem CPU-Limit des kostenlosen Workers-Tarifs.
  *  - Ergebnisse liegen im KV-Speicher DATA unter „part:<name>“.
  *  - GET  /data/marketdata.json  → alle Teilbereiche zusammengeführt
@@ -16,6 +16,7 @@ const CRON_PART = {
   '5 * * * *': 'kurse',
   '6 * * * *': 'fx',
   '7 * * * *': 'ezb',
+  '8 * * * *': 'kurve',
 };
 
 /** Mindestabstand zwischen zwei manuellen Abrufen desselben Teilbereichs. */

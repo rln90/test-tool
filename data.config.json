@@ -115,33 +115,102 @@
           "series": "B.EU000A2X2A25.WT"
         }
       ]
+    }
+  },
+  "bundesbank": {
+    "baseUrl": "https://api.statistiken.bundesbank.de/rest/data"
+  },
+  "curve": {
+    "id": "eur-zinskurve",
+    "name": "Euro-Zinskurve",
+    "sourceLabel": "Bundesbank, EZB",
+    "compareDaysAgo": [
+      30,
+      365
+    ],
+    "short": {
+      "id": "euribor",
+      "label": "EURIBOR",
+      "source": "bundesbank",
+      "flow": "BBIG1",
+      "key": "D.D0.EUR.MMKT.EURIBOR.{m}.BID._Z",
+      "maturities": {
+        "1W": "W01",
+        "1M": "M01",
+        "3M": "M03",
+        "6M": "M06",
+        "12M": "M12"
+      }
     },
-    "curve": {
-      "id": "eur-zinskurve",
-      "name": "Euro-Zinskurve (AAA-Staatsanleihen)",
-      "flow": "YC",
-      "seriesPrefix": "B.U2.EUR.4F.G_N_A.SV_C_YM.SR_",
-      "maturities": [
-        "3M",
-        "6M",
-        "1Y",
-        "2Y",
-        "3Y",
-        "5Y",
-        "7Y",
-        "10Y",
-        "15Y",
-        "20Y",
-        "30Y"
-      ],
-      "compareDaysAgo": [
-        30,
-        365
-      ],
-      "highlight": [
-        "2Y",
-        "10Y"
-      ]
+    "long": [
+      {
+        "id": "pfandbrief",
+        "label": "Pfandbriefe",
+        "source": "bundesbank",
+        "flow": "BBSIS",
+        "key": "D.I.ZST.ZI.EUR.S122.B.A100.{m}.R.A.A._Z._Z.A",
+        "maturities": {
+          "2Y": "R02XX",
+          "3Y": "R03XX",
+          "5Y": "R05XX",
+          "7Y": "R07XX",
+          "10Y": "R10XX",
+          "15Y": "R15XX",
+          "20Y": "R20XX"
+        }
+      },
+      {
+        "id": "aaa",
+        "label": "AAA-Staatsanleihen",
+        "source": "ecb",
+        "flow": "YC",
+        "key": "B.U2.EUR.4F.G_N_A.SV_C_YM.{m}",
+        "maturities": {
+          "2Y": "SR_2Y",
+          "3Y": "SR_3Y",
+          "5Y": "SR_5Y",
+          "7Y": "SR_7Y",
+          "10Y": "SR_10Y",
+          "15Y": "SR_15Y",
+          "20Y": "SR_20Y",
+          "30Y": "SR_30Y"
+        }
+      }
+    ],
+    "measures": [
+      {
+        "key": "euribor3M",
+        "label": "EURIBOR 3 M",
+        "segment": "euribor",
+        "maturity": "3M",
+        "decimals": 3
+      },
+      {
+        "key": "euribor12M",
+        "label": "EURIBOR 12 M",
+        "segment": "euribor",
+        "maturity": "12M",
+        "decimals": 3
+      },
+      {
+        "key": "pfb10Y",
+        "label": "Pfandbriefe 10 J.",
+        "segment": "pfandbrief",
+        "maturity": "10Y"
+      },
+      {
+        "key": "y10Y",
+        "label": "AAA-Staatsanl. 10 J.",
+        "segment": "aaa",
+        "maturity": "10Y"
+      }
+    ],
+    "spread": {
+      "key": "spread10y2y",
+      "label": "Spread AAA 10 J. – 2 J.",
+      "segment": "aaa",
+      "long": "10Y",
+      "short": "2Y"
     }
   }
 }
