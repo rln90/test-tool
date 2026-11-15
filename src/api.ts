@@ -5,12 +5,24 @@ const DEFAULT_CONFIG: AppConfig = {
   refreshSeconds: 300,
 };
 
+/** Fehler beim Laden mit HTTP-Status und ggf. der Meldung des Servers (Feld „error“). */
+export class HttpError extends Error {
+  constructor(
+    readonly status: number,
+    readonly serverMessage: string | undefined,
+    url: string,
+  ) {
+    super(serverMessage ?? `HTTP ${status} beim Laden von ${url}`);
+  }
+}
+
 async function getJson<T>(url: string): Promise<T> {
   // Cache-Busting, damit der Browser bei jeder Aktualisierung frische Daten holt.
   const sep = url.includes('?') ? '&' : '?';
   const res = await fetch(`${url}${sep}_=${Date.now()}`, { cache: 'no-store' });
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status} beim Laden von ${url}`);
+    const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+    throw new HttpError(res.status, typeof body?.error === 'string' ? body.error : undefined, url);
   }
   return (await res.json()) as T;
 }
