@@ -53,37 +53,43 @@ const deDate = (iso) => new Date(iso).toLocaleDateString('de-DE');
 
 // ---------- Yahoo Finance ----------
 
-/** Nacheinander abfragen, mit kurzer Pause, um Yahoo nicht zu überlasten. */
-let yahooQueue = Promise.resolve();
-function yahoo(symbol) {
-  const run = async () => {
-    const url = `${config.yahoo.baseUrl}/${encodeURIComponent(symbol)}?range=${Math.ceil(historyDays / 30)}mo&interval=1d`;
-    let lastErr;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        const res = await fetch(url, {
-          headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
-          signal: AbortSignal.timeout(TIMEOUT),
-        });
-        if (res.status === 429 || res.status >= 500) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json().catch(() => null);
-        const result = json?.chart?.result?.[0];
-        if (!res.ok || !result) {
-          const desc = json?.chart?.error?.description ?? `HTTP ${res.status}`;
-          throw Object.assign(new Error(desc), { final: true });
-        }
-        return result;
-      } catch (err) {
-        lastErr = err;
-        if (err.final) break;
-        await sleep(1500 * attempt);
-      }
-    }
-    throw new Error(`Yahoo ${symbol}: ${errMsg(lastErr)}`);
+/**
+ * Eigene Warteschlange je Abruf: Anfragen laufen nacheinander mit kurzer Pause, um Yahoo nicht zu überlasten.
+ * Bewusst nicht global – im Cloudflare Worker darf ein Request nicht auf Promises eines anderen Requests warten.
+ */
+function createYahooClient() {
+  let queue = Promise.resolve();
+  return (symbol) => {
+    const p = queue.then(() => yahooRequest(symbol));
+    queue = p.catch(() => {}).then(() => sleep(config.yahoo.pauseMs ?? 400));
+    return p;
   };
-  const p = yahooQueue.then(run);
-  yahooQueue = p.catch(() => {}).then(() => sleep(config.yahoo.pauseMs ?? 400));
-  return p;
+}
+
+async function yahooRequest(symbol) {
+  const url = `${config.yahoo.baseUrl}/${encodeURIComponent(symbol)}?range=${Math.ceil(historyDays / 30)}mo&interval=1d`;
+  let lastErr;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+        signal: AbortSignal.timeout(TIMEOUT),
+      });
+      if (res.status === 429 || res.status >= 500) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json().catch(() => null);
+      const result = json?.chart?.result?.[0];
+      if (!res.ok || !result) {
+        const desc = json?.chart?.error?.description ?? `HTTP ${res.status}`;
+        throw Object.assign(new Error(desc), { final: true });
+      }
+      return result;
+    } catch (err) {
+      lastErr = err;
+      if (err.final) break;
+      await sleep(1500 * attempt);
+    }
+  }
+  throw new Error(`Yahoo ${symbol}: ${errMsg(lastErr)}`);
 }
 
 /** Wandelt eine Yahoo-Antwort in Kurs + Tagesreihe (Datum in Börsen-Ortszeit). */
@@ -129,7 +135,7 @@ function parseYahoo(result) {
   };
 }
 
-async function fetchYahooInstrument(inst) {
+async function fetchYahooInstrument(inst, yahoo) {
   const out = { id: inst.id, name: inst.name, note: inst.note, ticker: inst.symbol, source: 'Yahoo Finance', measures: [] };
   try {
     const y = parseYahoo(await yahoo(inst.symbol));
@@ -312,7 +318,7 @@ async function ecbFxFallback(codes) {
   }
 }
 
-async function fetchFx() {
+async function fetchFx(yahoo) {
   const cfg = config.yahoo.fx;
   const out = { id: cfg.id, name: cfg.name, note: cfg.note, source: 'Yahoo Finance', measures: [] };
   const results = await Promise.all(
@@ -383,10 +389,11 @@ export async function collectData(cfg, previous = null, parts = PARTS) {
   config = cfg;
   historyDays = cfg.historyDays ?? 180;
   const want = (p) => parts.includes(p);
+  const yahoo = createYahooClient();
 
   const [yahooItems, fx, rates, curve] = await Promise.all([
-    want('kurse') ? Promise.all((config.yahoo?.instruments ?? []).map(fetchYahooInstrument)) : [],
-    want('fx') && config.yahoo?.fx ? fetchFx() : null,
+    want('kurse') ? Promise.all((config.yahoo?.instruments ?? []).map((inst) => fetchYahooInstrument(inst, yahoo))) : [],
+    want('fx') && config.yahoo?.fx ? fetchFx(yahoo) : null,
     want('ezb') && config.ecb?.rates ? fetchEcbRates() : null,
     want('ezb') && config.ecb?.curve ? fetchEcbCurve() : null,
   ]);

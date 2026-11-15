@@ -10,8 +10,14 @@
     // Diese Pfade beantwortet der Worker selbst, alles andere sind statische Dateien aus dist/.
     "run_worker_first": ["/data/*", "/api/*", "/app-config.json"]
   },
-  // Wird beim ersten Deploy automatisch angelegt (ohne id).
-  "kv_namespaces": [{ "binding": "DATA" }],
+  // Datenspeicher der Produktivversion („marktdaten-dashboard-data“).
+  // Die ID muss fest eingetragen sein, sonst schlagen Vorschau-Builds fehl (Fehler 10021).
+  "kv_namespaces": [{ "binding": "DATA", "id": "b4868eb9bffb4393b5fc9c341b3d6c81" }],
+  // Vorschau-Versionen für Pull Requests nutzen einen eigenen Speicher („marktdaten-dashboard-preview“),
+  // damit sie die echten Daten nicht verändern. Vorschauen haben keine Cron-Läufe: Daten per „Jetzt abrufen“ laden.
+  "previews": {
+    "kv_namespaces": [{ "binding": "DATA", "id": "2f677c03001946548d54afb46301204b" }]
+  },
   "triggers": {
     // Je ein Lauf pro Teilbereich, siehe CRON_PART in worker/index.js.
     "crons": ["5 * * * *", "6 * * * *", "7 * * * *"]
