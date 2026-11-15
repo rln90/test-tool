@@ -33,6 +33,10 @@ export interface Price {
 
 export interface Instrument {
   id: string;
+  /** Art des Eintrags: Kurs (ETF, Krypto …), Zinsen oder Wechselkurse. */
+  kind?: 'asset' | 'rates' | 'fx';
+  /** Gruppe in der Kursliste, z. B. „ETF“ oder „Krypto“. */
+  group?: string;
   name: string;
   /** Zusatzhinweis, z. B. welches Wertpapier als Stellvertreter dient. */
   note?: string;
