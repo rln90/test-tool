@@ -17,7 +17,6 @@
         { "code": "GBP", "label": "Pfund", "decimals": 4 },
         { "code": "JPY", "label": "Yen", "decimals": 2 },
         { "code": "CNY", "label": "Renminbi", "decimals": 4 },
-        { "code": "CNH", "label": "Renminbi off.", "decimals": 4 },
         { "code": "PLN", "label": "Złoty", "decimals": 4 },
         { "code": "SEK", "label": "Schw. Krone", "decimals": 4 },
         { "code": "NOK", "label": "Norw. Krone", "decimals": 4 },
