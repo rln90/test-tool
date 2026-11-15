@@ -96,6 +96,9 @@ export interface AppConfig {
   dataUrl: string;
   refreshSeconds: number;
   github?: GithubConfig;
+  /** Endpunkt für sofortigen Abruf (Cloudflare Worker), je Teilbereich per POST ?part=… */
+  refreshUrl?: string;
+  refreshParts?: string[];
   /** Optionaler Hinweis oben auf der Seite, z. B. für eine Vorschau. */
   notice?: string;
 }

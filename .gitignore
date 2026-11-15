@@ -3,3 +3,4 @@ dist/
 .env
 *.local
 public/data/marketdata.json
+.wrangler/

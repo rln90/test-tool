@@ -11,7 +11,39 @@ Persönliches Dashboard mit stündlich aktualisierten Marktdaten.
 
 Fällt eine Quelle aus, bleibt der letzte veröffentlichte Stand stehen und wird als „Veraltet“ markiert.
 
-## Ablauf
+## Betrieb auf Cloudflare (empfohlen)
+
+Ein Cloudflare Worker liefert die Seite aus und ruft die Daten selbst ab – ohne GitHub Actions.
+
+```
+Cloudflare Worker „marktdaten-dashboard“
+  ├─ stündlich 3 Cron-Läufe (:05 Kurse, :06 Wechselkurse, :07 EZB) → KV-Speicher
+  ├─ GET  /data/marketdata.json → Daten aus dem KV-Speicher
+  ├─ POST /api/refresh?part=…   → Button „Jetzt abrufen“ (höchstens 1× pro Minute je Bereich)
+  └─ alle anderen Pfade         → statische Seite aus dist/
+```
+
+Die Aufteilung in drei Läufe hält jeden Lauf unter dem CPU-Limit des kostenlosen Workers-Tarifs (10 ms).
+
+### Einrichtung
+
+1. Cloudflare-Dashboard → *Workers & Pages* → *Create* → *Import a repository* → GitHub verbinden und `rln90/test-tool` wählen.
+2. Projektname: `marktdaten-dashboard` (muss zu `wrangler.jsonc` passen), Branch `main`,
+   Build command `npm run build`, Deploy command `npx wrangler deploy`.
+3. Nach dem ersten Deploy die angezeigte `*.workers.dev`-Adresse öffnen und „Jetzt abrufen“ klicken.
+   Der KV-Speicher wird beim ersten Deploy automatisch angelegt.
+4. Optional, damit nur du die Seite sehen kannst: *Zero Trust → Access → Applications* → Self-hosted-Anwendung für die
+   Worker-Adresse, Richtlinie „Allow“ mit deiner E-Mail-Adresse, Anmeldung per One-time PIN (kostenlos bis 50 Nutzer).
+5. Danach den GitHub-Workflow abschalten: *Actions → Dashboard aktualisieren → ⋯ → Disable workflow*.
+
+Jeder Push auf `main` baut und veröffentlicht automatisch neu.
+
+```bash
+npm run cf:dev     # Worker lokal starten (Cron testen: http://localhost:8787/__scheduled?cron=5+*+*+*+*)
+npm run deploy     # manuell veröffentlichen (wrangler login nötig)
+```
+
+## Betrieb über GitHub Pages (bisherig)
 
 ```
 GitHub Actions (stündlich Mo–Fr, bei Push auf main, oder per Button „Jetzt abrufen“)
@@ -35,7 +67,9 @@ npm run sample-data   # synthetische Beispieldaten zum Testen der Oberfläche
 
 - `data.config.json`: Instrumente (Yahoo-Symbole), Währungen, EZB-Zinsreihen, Laufzeiten der Zinskurve.
 - `public/app-config.json`: Neulade-Intervall im Browser und GitHub-Angaben für den Button „Jetzt abrufen“.
-- `.github/workflows/dashboard.yml`: Zeitplan des Datenabrufs.
+- `.github/workflows/dashboard.yml`: Zeitplan des Datenabrufs auf GitHub.
+- `wrangler.jsonc`, `worker/index.js`: Cloudflare Worker (Zeitplan unter `triggers.crons`).
+- `scripts/lib/collect.mjs`: gemeinsamer Datenabruf für GitHub-Skript und Worker.
 
 ## Einrichtung auf GitHub
 

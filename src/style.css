@@ -116,6 +116,7 @@ h1 { font-size: 20px; margin: 0 0 2px; }
 .dialog-head h2 { font-size: 16px; margin: 0; display: inline-flex; align-items: center; gap: 8px; }
 .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 .btn.spinning svg { animation: spin 1s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .btn.spinning svg { animation: none; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .notice {
