@@ -10,7 +10,8 @@ import {
   Legend,
 } from 'chart.js';
 import type { Curve, CurveLine, Point } from './types';
-import { fmtDate, fmtNumber } from './format';
+import { dayLabel, type Seasonal } from './seasonal';
+import { fmtDate, fmtNumber, fmtSigned } from './format';
 
 Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Filler, Tooltip, Legend);
 
@@ -198,6 +199,102 @@ export function renderCurve(id: string, canvas: HTMLCanvasElement, curve: Curve,
           grid: { color: grid },
           border: { display: false },
           ticks: { color: muted, maxTicksLimit: 6, callback: (v) => `${fmtNumber(Number(v), 2)}${unit}` },
+        },
+      },
+    },
+  });
+  charts.set(id, chart);
+}
+
+const MONTH_STARTS = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+
+/**
+ * Saisonale Ansicht: je Kalenderjahr eine Linie (Veränderung seit Jahresbeginn in %),
+ * laufendes Jahr kräftig, Vorjahre gedämpft, Durchschnitt gestrichelt.
+ */
+export function renderSeasonal(id: string, canvas: HTMLCanvasElement, data: Seasonal): void {
+  charts.get(id)?.destroy();
+  const muted = cssVar('--muted');
+  const grid = cssVar('--grid');
+  const text = cssVar('--text');
+  const palette = [cssVar('--series-2'), cssVar('--compare-2'), cssVar('--compare-1'), cssVar('--year-4')];
+  const older = data.years.filter((y) => !y.current).reverse(); // jüngstes Vorjahr zuerst → kräftigste Vorjahresfarbe
+
+  const datasets = data.years.map((y) => {
+    const color = y.current ? cssVar('--accent') : palette[older.indexOf(y) % palette.length];
+    return {
+      label: y.current ? `${y.year} (laufend)` : String(y.year),
+      data: y.points,
+      borderColor: color,
+      backgroundColor: color,
+      borderWidth: y.current ? 2.75 : 1.5,
+      pointRadius: 0,
+      pointHoverRadius: 3,
+      tension: 0.2,
+      order: y.current ? 0 : 2,
+    };
+  });
+  if (data.average) {
+    datasets.push({
+      label: data.average.label,
+      data: data.average.points,
+      borderColor: text,
+      backgroundColor: text,
+      borderWidth: 1.75,
+      pointRadius: 0,
+      pointHoverRadius: 3,
+      tension: 0.3,
+      order: 1,
+      ...({ borderDash: [5, 4] } as object),
+    });
+  }
+
+  const chart = new Chart(canvas, {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      parsing: false,
+      interaction: { mode: 'nearest', axis: 'x', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'bottom',
+          labels: { color: muted, boxWidth: 16, boxHeight: 2, font: { size: 12 } },
+        },
+        tooltip: {
+          callbacks: {
+            title: (items) => (items[0] ? dayLabel(items[0].parsed.x ?? 0) : ''),
+            label: (ctx) => `${ctx.dataset.label}: ${fmtSigned(ctx.parsed.y, 1, ' %')}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          type: 'linear',
+          min: 0,
+          max: 365,
+          grid: { color: grid },
+          border: { display: false },
+          afterBuildTicks: (scale) => {
+            scale.ticks = MONTH_STARTS.map((value) => ({ value }));
+          },
+          ticks: {
+            color: muted,
+            maxRotation: 0,
+            autoSkip: true,
+            autoSkipPadding: 4,
+            callback: (v) => MONTHS[MONTH_STARTS.indexOf(Number(v))] ?? '',
+          },
+        },
+        y: {
+          position: 'right',
+          grid: { color: (ctx) => (ctx.tick.value === 0 ? muted : grid) },
+          border: { display: false },
+          ticks: { color: muted, maxTicksLimit: 6, callback: (v) => fmtSigned(Number(v), 0, ' %') },
         },
       },
     },
