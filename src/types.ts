@@ -44,8 +44,10 @@ export interface Instrument {
   currency?: string;
   source?: string;
   price?: Price;
-  /** Kursverlauf. */
+  /** Kursverlauf (Tageskurse, ca. 6 Monate). */
   series?: Point[];
+  /** Älterer Verlauf als Wochenkurse (bis 5 Jahre), endet vor dem ersten Punkt von series. */
+  longSeries?: Point[];
   measures: Measure[];
   /** Fehlermeldung, falls dieses Instrument beim Abruf nicht geladen werden konnte. */
   error?: string;

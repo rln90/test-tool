@@ -59,15 +59,18 @@ const deDate = (iso) => new Date(iso).toLocaleDateString('de-DE', { day: '2-digi
  */
 function createYahooClient() {
   let queue = Promise.resolve();
-  return (symbol) => {
-    const p = queue.then(() => yahooRequest(symbol));
+  return (symbol, opts) => {
+    const p = queue.then(() => yahooRequest(symbol, opts));
     queue = p.catch(() => {}).then(() => sleep(config.yahoo.pauseMs ?? 400));
     return p;
   };
 }
 
-async function yahooRequest(symbol) {
-  const url = `${config.yahoo.baseUrl}/${encodeURIComponent(symbol)}?range=${Math.ceil(historyDays / 30)}mo&interval=1d`;
+/** opts: { range, interval } – Standard: Tageskurse über historyDays. */
+async function yahooRequest(symbol, opts = {}) {
+  const range = opts.range ?? `${Math.ceil(historyDays / 30)}mo`;
+  const interval = opts.interval ?? '1d';
+  const url = `${config.yahoo.baseUrl}/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`;
   let lastErr;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -124,6 +127,7 @@ function parseYahoo(result) {
   return {
     currency: meta.currency,
     exchange: meta.fullExchangeName ?? meta.exchangeName,
+    tradesWeekends,
     series,
     price:
       last === null
@@ -135,6 +139,21 @@ function parseYahoo(result) {
             asOf: lastTime ? lastTime.toISOString() : lastDate,
           },
   };
+}
+
+/** Langer Verlauf (z. B. 5 Jahre) als Wochenkurse, auf 4 Nachkommastellen gerundet. */
+async function fetchLongSeries(inst, yahoo) {
+  const w = parseYahoo(await yahoo(inst.symbol, { range: config.yahoo.longRange, interval: '1wk' }));
+  if (!w.series.length) throw new Error('keine Wochenkurse erhalten');
+  // Yahoo datiert Wochenkurse auf den Wochenbeginn, der Wert ist aber der Schlusskurs der Woche:
+  // auf das Wochenende verschieben (Freitag, bei Krypto Sonntag), damit Datum und Wert zusammenpassen.
+  const weekEnd = (t) => {
+    const d = new Date(`${t}T12:00:00Z`);
+    const wd = d.getUTCDay(); // 0 = Sonntag; ein Sonntag gilt als Beginn der folgenden Woche
+    const monday = d.getTime() + (wd === 0 ? 1 : 1 - wd) * DAY;
+    return isoDate(new Date(monday + (w.tradesWeekends ? 6 : 4) * DAY));
+  };
+  return w.series.map((p) => ({ t: weekEnd(p.t), v: Math.round(p.v * 1e4) / 1e4 }));
 }
 
 async function fetchYahooInstrument(inst, yahoo) {
@@ -516,7 +535,7 @@ function withFallback(items, previousItems) {
 export class NoDataError extends Error {}
 
 /** Teilbereiche, die einzeln abgerufen werden können (z. B. je ein Cloudflare-Cron-Lauf). */
-export const PARTS = ['kurse', 'fx', 'ezb', 'kurve'];
+export const PARTS = ['kurse', 'fx', 'ezb', 'kurve', 'lang'];
 
 /**
  * Holt die gewünschten Teilbereiche (Standard: alle). Ausgefallene Bereiche werden durch den
@@ -540,7 +559,24 @@ export async function collectData(cfg, previous = null, parts = PARTS) {
     want('kurve') && config.curve ? fetchCurve() : null,
   ]);
 
-  const instruments = withFallback([...yahooItems, rates, fx].filter(Boolean), previous?.instruments);
+  // Teilbereich „lang“: Wochenkurse je Kurs-Instrument; bei Fehler bleibt der vorige Verlauf erhalten.
+  let longSeries;
+  if (want('lang') && config.yahoo?.longRange) {
+    longSeries = {};
+    for (const inst of config.yahoo.instruments ?? []) {
+      try {
+        longSeries[inst.id] = await fetchLongSeries(inst, yahoo);
+      } catch (err) {
+        const prev = previous?.longSeries?.[inst.id] ?? previous?.instruments?.find((x) => x.id === inst.id)?.longSeries;
+        if (prev) longSeries[inst.id] = prev;
+        console.error(`[lang:${inst.id}] ${errMsg(err)}`);
+      }
+    }
+  }
+
+  const instruments = withFallback([...yahooItems, rates, fx].filter(Boolean), previous?.instruments).map((x) =>
+    longSeries?.[x.id] ? { ...x, longSeries: longSeries[x.id] } : x,
+  );
   const curves = withFallback([curve].filter(Boolean), previous?.curves);
 
   const all = [...instruments, ...curves];
@@ -552,18 +588,21 @@ export async function collectData(cfg, previous = null, parts = PARTS) {
     source: 'Yahoo Finance, EZB, Bundesbank',
     instruments,
     curves,
+    ...(longSeries ? { longSeries } : {}),
   };
 }
 
 /** Führt getrennt abgerufene Teilbereiche in der Anzeigereihenfolge zusammen. */
 export function mergeParts(byPart) {
   const got = PARTS.map((p) => byPart[p]).filter(Boolean);
-  if (!got.length) return null;
+  if (!PARTS.some((p) => p !== 'lang' && byPart[p])) return null;
   const pick = (p) => byPart[p]?.instruments ?? [];
   return {
     generatedAt: got.map((d) => d.generatedAt).sort().at(-1),
     source: 'Yahoo Finance, EZB, Bundesbank',
-    instruments: [...pick('kurse'), ...pick('ezb'), ...pick('fx')],
+    instruments: [...pick('kurse'), ...pick('ezb'), ...pick('fx')].map((x) =>
+      byPart.lang?.longSeries?.[x.id] ? { ...x, longSeries: byPart.lang.longSeries[x.id] } : x,
+    ),
     // Ältere Datenstände hatten die Zinskurve im Teilbereich „ezb“.
     curves: byPart.kurve?.curves ?? byPart.ezb?.curves ?? [],
   };
@@ -574,5 +613,6 @@ export function summarize(data) {
   const all = [...data.instruments, ...(data.curves ?? [])];
   const ok = all.filter((x) => !x.error).length;
   const stale = all.filter((x) => x.stale).length;
-  return `${ok}/${all.length} Bereiche aktuell, ${stale} veraltet`;
+  const long = data.longSeries ? `, ${Object.keys(data.longSeries).length} Langzeitverläufe` : '';
+  return `${ok}/${all.length} Bereiche aktuell, ${stale} veraltet${long}`;
 }

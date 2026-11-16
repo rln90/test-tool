@@ -13,7 +13,13 @@ const RANGES = [
   { key: '1M', label: '1 M', days: 30 },
   { key: '3M', label: '3 M', days: 91 },
   { key: '6M', label: '6 M', days: 183 },
+  { key: '1Y', label: '1 J', days: 365 },
+  { key: '2Y', label: '2 J', days: 730 },
+  { key: '3Y', label: '3 J', days: 1096 },
+  { key: '5Y', label: '5 J', days: 1826 },
 ] as const;
+/** Ab hier stammen ältere Punkte aus Wochenkursen. */
+const DAILY_DAYS = 183;
 type RangeKey = (typeof RANGES)[number]['key'];
 
 const PREF_KEY = 'marktdaten-dashboard:auswahl';
@@ -247,10 +253,26 @@ function watchlist(assets: Instrument[], selected: Instrument | undefined): HTML
   return panel('Kursliste', 'Zeile anklicken für den Chart', h('div', { class: 'table-wrap' }, table));
 }
 
+/** Wochenkurse (vor Beginn der Tageskurse) + Tageskurse als ein durchgehender Verlauf. */
+function fullSeries(a: Instrument): Point[] {
+  const daily = a.series ?? [];
+  const first = daily[0]?.t;
+  const older = (a.longSeries ?? []).filter((p) => !first || p.t < first);
+  return [...older, ...daily];
+}
+
 function chartPanel(a: Instrument | undefined): HTMLElement {
   if (!a) return panel('Chart', null, h('div', { class: 'empty' }, 'Keine Kursdaten vorhanden.'));
-  const range = RANGES.find((r) => r.key === state.range) ?? RANGES[2];
-  const series = sliceDays(a.series, range.days);
+  const all = fullSeries(a);
+  const lastT = all.at(-1)?.t;
+  const firstT = all[0]?.t;
+  // Ein Zeitraum ist verfügbar, wenn der Verlauf (mit 14 Tagen Spielraum) weit genug zurückreicht.
+  const available = (r: (typeof RANGES)[number]) =>
+    r.days <= DAILY_DAYS || (!!firstT && !!lastT && firstT <= shiftDate(lastT, r.days - 14));
+  const wanted = RANGES.find((r) => r.key === state.range) ?? RANGES[2];
+  const range = available(wanted) ? wanted : [...RANGES].reverse().find(available) ?? RANGES[2];
+  // Bis 6 Monate nur Tageskurse (genauer, gleiche Basis wie die Kursliste), darüber mit Wochenkursen.
+  const series = sliceDays(range.days <= DAILY_DAYS ? (a.series ?? []) : all, range.days);
   const values = series.map((p) => p.v);
   const p = a.price;
 
@@ -258,11 +280,20 @@ function chartPanel(a: Instrument | undefined): HTMLElement {
     'div',
     { class: 'tabs', role: 'tablist', 'aria-label': 'Zeitraum' },
     ...RANGES.map((r) => {
+      const ok = available(r);
+      const active = r.key === range.key;
       const b = h(
         'button',
-        { type: 'button', role: 'tab', class: `tab${r.key === range.key ? ' active' : ''}`, 'aria-selected': String(r.key === range.key) },
+        {
+          type: 'button',
+          role: 'tab',
+          class: `tab${active ? ' active' : ''}`,
+          'aria-selected': String(active),
+          title: ok ? `Verlauf ${r.label.replace('M', 'Monat(e)').replace('J', 'Jahr(e)')}` : `Für ${a.name} liegen Kurse erst ab ${fmtDate(firstT ?? '', true)} vor`,
+        },
         r.label,
       );
+      if (!ok) b.setAttribute('disabled', '');
       b.addEventListener('click', () => {
         state.range = r.key;
         writePrefs();
@@ -271,6 +302,12 @@ function chartPanel(a: Instrument | undefined): HTMLElement {
       return b;
     }),
   );
+  const rangeNote =
+    wanted.key !== range.key
+      ? `${wanted.label} nicht verfügbar – Kurse erst ab ${fmtDate(firstT ?? '', true)}`
+      : range.days > DAILY_DAYS
+        ? 'Ältere Werte als Wochenschlusskurse'
+        : null;
 
   const canvas = h('canvas', { 'aria-label': `Kursverlauf ${a.name}`, role: 'img' });
   requestAnimationFrame(() => renderLine('main-chart', canvas, series));
@@ -297,7 +334,7 @@ function chartPanel(a: Instrument | undefined): HTMLElement {
         h('div', { class: 'price-change' }, delta(p?.change, 2, '', false), pill(p?.changePct)),
       ),
     ),
-    tabs,
+    h('div', { class: 'panel-tools chart-tools' }, tabs, rangeNote ? h('span', { class: 'muted' }, rangeNote) : null),
     h('div', { class: 'chart-box' }, canvas),
     h(
       'div',

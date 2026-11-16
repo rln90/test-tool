@@ -3,6 +3,7 @@
   "yahoo": {
     "baseUrl": "https://query1.finance.yahoo.com/v8/finance/chart",
     "pauseMs": 400,
+    "longRange": "5y",
     "instruments": [
       {
         "id": "core-msci-world",

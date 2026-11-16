@@ -1,7 +1,8 @@
 /**
  * Cloudflare Worker: liefert das Dashboard aus (statische Dateien aus dist/) und hält die Daten aktuell.
  *
- *  - Stündlich laufen vier Cron-Jobs, je einer pro Teilbereich (ETFs & Bitcoin, Wechselkurse, EZB-Leitzinsen, Zinskurve).
+ *  - Stündlich fünf Läufe (Minute 5–9), je einer pro Teilbereich: ETFs & Bitcoin, Wechselkurse, EZB-Leitzinsen,
+ *    Zinskurve, 5-Jahres-Verlauf. Die Aufteilung hält jeden Lauf unter dem CPU-Limit des kostenlosen Workers-Tarifs.
  *    Die Aufteilung hält jeden Lauf unter dem CPU-Limit des kostenlosen Workers-Tarifs.
  *  - Ergebnisse liegen im KV-Speicher DATA unter „part:<name>“.
  *  - GET  /data/marketdata.json  → alle Teilbereiche zusammengeführt
@@ -12,13 +13,11 @@
 import config from '../data.config.json';
 import { collectData, fetchCurveAt, mergeParts, NoDataError, PARTS, summarize } from '../scripts/lib/collect.mjs';
 
-/** Welcher Cron-Ausdruck welchen Teilbereich abruft (muss zu wrangler.jsonc passen). */
-const CRON_PART = {
-  '5 * * * *': 'kurse',
-  '6 * * * *': 'fx',
-  '7 * * * *': 'ezb',
-  '8 * * * *': 'kurve',
-};
+/**
+ * Ein einziger Cron-Ausdruck („5-9 * * * *“) löst stündlich fünf getrennte Läufe aus.
+ * Die Minute bestimmt den Teilbereich; jeder Lauf hat sein eigenes CPU-Budget.
+ */
+const MINUTE_PART = { 5: 'kurse', 6: 'fx', 7: 'ezb', 8: 'kurve', 9: 'lang' };
 
 /** Mindestabstand zwischen zwei manuellen Abrufen desselben Teilbereichs. */
 const MIN_REFRESH_MS = 60 * 1000;
@@ -38,6 +37,9 @@ async function updatePart(env, part) {
     await env.DATA.put(`part:${part}`, JSON.stringify(data));
     console.log(`[${part}] ${summarize(data)}`);
     const items = [...data.instruments, ...data.curves];
+    if (part === 'lang' && !Object.keys(data.longSeries ?? {}).length) {
+      return { ok: false, message: 'Der lange Kursverlauf ist gerade nicht verfügbar.' };
+    }
     if (items.length && items.every((x) => x.error)) {
       return { ok: false, message: 'Die Quellen waren nicht erreichbar. Es wird der letzte Stand angezeigt.' };
     }
@@ -127,9 +129,9 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    const part = CRON_PART[event.cron];
+    const part = MINUTE_PART[new Date(event.scheduledTime).getUTCMinutes()];
     if (!part) {
-      console.error(`Unbekannter Cron-Ausdruck „${event.cron}“`);
+      console.error(`Kein Teilbereich für ${new Date(event.scheduledTime).toISOString()} (Cron „${event.cron}“)`);
       return;
     }
     ctx.waitUntil(updatePart(env, part));

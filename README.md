@@ -16,7 +16,7 @@ Fällt eine Quelle aus, bleibt der letzte veröffentlichte Stand stehen und wird
 ## Aufbau der Seite
 
 1. **Überblick:** EZB-Einlagezins, Rendite 10 J., Steilheit der Zinskurve (10 J. – 2 J.), EUR/USD
-2. **Märkte:** Kursliste mit Tag, 1 M, 6 M und Verlauf; Klick auf eine Zeile zeigt den Chart (1 M / 3 M / 6 M)
+2. **Märkte:** Kursliste mit Tag, 1 M, 6 M und Verlauf; Klick auf eine Zeile zeigt den Chart (1 M bis 6 M aus Tageskursen, 1 / 2 / 3 / 5 J mit Wochenschlusskursen; Zeiträume ohne Daten sind ausgegraut)
 3. **Zinsen:** Euro-Zinskurve (EURIBOR bis 12 M, danach Pfandbriefe und AAA-Staatsanleihen); Vergleich mit „vor 30 Tagen“, „vor 1 Jahr“ oder einem frei wählbaren Stichtag ab 06.09.2004 (nur auf Cloudflare); daneben Leitzinsen, EURIBOR und Renditen
 4. **Währungen:** Wechselkurse mit Tages-, 1-Monats- und 6-Monats-Veränderung
 
@@ -26,14 +26,15 @@ Ein Cloudflare Worker liefert die Seite aus und ruft die Daten selbst ab – ohn
 
 ```
 Cloudflare Worker „marktdaten-dashboard“
-  ├─ stündlich 4 Cron-Läufe (:05 ETFs & Bitcoin, :06 Wechselkurse, :07 EZB-Leitzinsen, :08 Zinskurve) → KV-Speicher
+  ├─ ein Cron-Ausdruck „5-9 * * * *“ = stündlich 5 Läufe; die Minute wählt den Teilbereich:
+  │    :05 ETFs & Bitcoin, :06 Wechselkurse, :07 EZB-Leitzinsen, :08 Zinskurve, :09 5-Jahres-Verlauf → KV-Speicher
   ├─ GET  /data/marketdata.json → Daten aus dem KV-Speicher
   ├─ POST /api/refresh?part=…   → Button „Aktualisieren“ (höchstens 1× pro Minute je Bereich)
   ├─ GET  /api/curve?date=…     → Zinskurve zu einem frei gewählten Stichtag (vergangene Tage dauerhaft zwischengespeichert)
   └─ alle anderen Pfade         → statische Seite aus dist/
 ```
 
-Die Aufteilung in vier Läufe hält jeden Lauf unter dem CPU-Limit des kostenlosen Workers-Tarifs (10 ms).
+Die Aufteilung in fünf Läufe hält jeden Lauf unter dem CPU-Limit des kostenlosen Workers-Tarifs (10 ms).
 
 ### Einrichtung
 
@@ -53,7 +54,7 @@ Pull Request. Vorschauen nutzen den eigenen KV-Speicher `marktdaten-dashboard-pr
 Daten dort per „Aktualisieren“ laden. Vorschau-Adressen sind öffentlich erreichbar.
 
 ```bash
-npm run cf:dev     # Worker lokal starten (Cron testen: http://localhost:8787/__scheduled?cron=5+*+*+*+*)
+npm run cf:dev     # Worker lokal starten (Lauf testen: http://localhost:8787/cdn-cgi/handler/scheduled?cron=5-9+*+*+*+*&time=<Zeitpunkt in ms>)
 npm run deploy     # manuell veröffentlichen (wrangler login nötig)
 ```
 

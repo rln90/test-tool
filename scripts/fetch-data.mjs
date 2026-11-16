@@ -46,6 +46,9 @@ try {
   throw err;
 }
 
+// Wochenkurse hängen bereits an den Instrumenten; die Sammelliste wird nur im Worker gebraucht.
+delete data.longSeries;
+
 // Atomar schreiben, damit das Dashboard nie eine halb geschriebene Datei liest.
 await mkdir(dirname(outPath), { recursive: true });
 await writeFile(`${outPath}.tmp`, JSON.stringify(data));
