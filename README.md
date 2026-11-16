@@ -16,7 +16,7 @@ Fällt eine Quelle aus, bleibt der letzte veröffentlichte Stand stehen und wird
 ## Aufbau der Seite
 
 1. **Überblick:** EZB-Einlagezins, Rendite 10 J., Steilheit der Zinskurve (10 J. – 2 J.), EUR/USD
-2. **Märkte:** Kursliste mit Tag, 1 M, 6 M und Verlauf; Klick auf eine Zeile zeigt den Chart (1 M bis 6 M aus Tageskursen, 1 / 2 / 3 / 5 J mit Wochenschlusskursen; Zeiträume ohne Daten sind ausgegraut)
+2. **Märkte:** Kursliste mit Tag, 1 M, 6 M und Verlauf; Klick auf eine Zeile zeigt den Chart (1 M bis 6 M aus Tageskursen, 1 / 2 / 3 / 5 J mit Wochenschlusskursen; Zeiträume ohne Daten sind ausgegraut); Umschalter „Saisonal“ legt 2, 3 oder 5 Kalenderjahre (Jan–Dez, Veränderung seit Jahresbeginn) mit dem Durchschnitt der abgeschlossenen Jahre übereinander
 3. **Zinsen:** Euro-Zinskurve (EURIBOR bis 12 M, danach Pfandbriefe und AAA-Staatsanleihen); Vergleich mit „vor 30 Tagen“, „vor 1 Jahr“ oder einem frei wählbaren Stichtag ab 06.09.2004 (nur auf Cloudflare); daneben Leitzinsen, EURIBOR und Renditen
 4. **Währungen:** Wechselkurse mit Tages-, 1-Monats- und 6-Monats-Veränderung
 

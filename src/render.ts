@@ -2,7 +2,8 @@ import { ArrowDownRight, ArrowUpRight, CalendarDays, History, Minus, TriangleAle
 import { loadCurveAt } from './api';
 import { h } from './dom';
 import { icon } from './icons';
-import { normalizeCurveLines, pruneCharts, renderCurve, renderLine } from './charts';
+import { normalizeCurveLines, pruneCharts, renderCurve, renderLine, renderSeasonal } from './charts';
+import { buildSeasonal } from './seasonal';
 import { fmtDate, fmtDateTime, fmtNumber, fmtSigned, trendClass } from './format';
 import { sparkline } from './sparkline';
 import type { Curve, CurveLine, Instrument, MarketData, Measure, Point } from './types';
@@ -24,7 +25,7 @@ type RangeKey = (typeof RANGES)[number]['key'];
 
 const PREF_KEY = 'marktdaten-dashboard:auswahl';
 
-function readPrefs(): { selected?: string; range?: RangeKey; compare?: string | null } {
+function readPrefs(): { selected?: string; range?: RangeKey; compare?: string | null; view?: string; seasonYears?: number } {
   try {
     return JSON.parse(localStorage.getItem(PREF_KEY) ?? '{}');
   } catch {
@@ -34,17 +35,19 @@ function readPrefs(): { selected?: string; range?: RangeKey; compare?: string | 
 
 function writePrefs(): void {
   try {
-    localStorage.setItem(PREF_KEY, JSON.stringify({ selected: state.selected, range: state.range, compare: state.compare }));
+    localStorage.setItem(PREF_KEY, JSON.stringify({ selected: state.selected, range: state.range, compare: state.compare, view: state.view, seasonYears: state.seasonYears }));
   } catch {
     // Speicher nicht verfügbar – Auswahl gilt dann nur bis zum Neuladen.
   }
 }
 
 const prefs = readPrefs();
-const state: { selected?: string; range: RangeKey; compare: string | null } = {
+const state: { selected?: string; range: RangeKey; compare: string | null; view: 'verlauf' | 'saison'; seasonYears: number } = {
   selected: prefs.selected,
   range: RANGES.some((r) => r.key === prefs.range) ? (prefs.range as RangeKey) : '6M',
   compare: prefs.compare === undefined ? 'vor 1 Jahr' : prefs.compare,
+  view: prefs.view === 'saison' ? 'saison' : 'verlauf',
+  seasonYears: [2, 3, 5].includes(Number(prefs.seasonYears)) ? Number(prefs.seasonYears) : 5,
 };
 
 let lastData: MarketData | null = null;
@@ -261,6 +264,29 @@ function fullSeries(a: Instrument): Point[] {
   return [...older, ...daily];
 }
 
+/** Segment-Umschalter (Knöpfe in einer Gruppe); disabled: Begründung als Tooltip. */
+function segmented<T extends string | number>(
+  label: string,
+  options: Array<{ value: T; text: string; disabled?: string }>,
+  active: T,
+  onChoose: (v: T) => void,
+): HTMLElement {
+  return h(
+    'div',
+    { class: 'tabs', role: 'group', 'aria-label': label },
+    ...options.map((o) => {
+      const isActive = o.value === active;
+      const b = h('button', { type: 'button', class: `tab${isActive ? ' active' : ''}`, 'aria-pressed': String(isActive) }, o.text);
+      if (o.disabled) {
+        b.setAttribute('disabled', '');
+        b.title = o.disabled;
+      }
+      b.addEventListener('click', () => onChoose(o.value));
+      return b;
+    }),
+  );
+}
+
 function chartPanel(a: Instrument | undefined): HTMLElement {
   if (!a) return panel('Chart', null, h('div', { class: 'empty' }, 'Keine Kursdaten vorhanden.'));
   const all = fullSeries(a);
@@ -309,11 +335,76 @@ function chartPanel(a: Instrument | undefined): HTMLElement {
         ? 'Ältere Werte als Wochenschlusskurse'
         : null;
 
-  const canvas = h('canvas', { 'aria-label': `Kursverlauf ${a.name}`, role: 'img' });
-  requestAnimationFrame(() => renderLine('main-chart', canvas, series));
-
   const stat = (label: string, value: Node | string) =>
     h('div', { class: 'stat' }, h('div', { class: 'stat-label' }, label), h('div', { class: 'stat-value' }, value));
+
+  const viewSwitch = segmented(
+    'Ansicht',
+    [
+      { value: 'verlauf' as const, text: 'Verlauf' },
+      { value: 'saison' as const, text: 'Saisonal' },
+    ],
+    state.view,
+    (v) => {
+      state.view = v;
+      writePrefs();
+      rerender();
+    },
+  );
+
+  const canvas = h('canvas', { 'aria-label': `${state.view === 'saison' ? 'Saisonale Ansicht' : 'Kursverlauf'} ${a.name}`, role: 'img' });
+  let tools: Array<Node | null>;
+  let statsRow: HTMLElement;
+
+  if (state.view === 'saison') {
+    // Alle Jahre in gleicher Auflösung (Wochenschlusskurse), dazu der neueste Tageskurs als aktueller Stand.
+    const weekly = a.longSeries ?? [];
+    const lastDaily = a.series?.at(-1);
+    const seasonSource =
+      weekly.length && lastDaily
+        ? [...weekly.filter((pt) => pt.t < lastDaily.t), lastDaily]
+        : all;
+    const probe = buildSeasonal(seasonSource, 99);
+    const count = Math.min(state.seasonYears, Math.max(probe.available, 1));
+    const seasonal = buildSeasonal(seasonSource, count);
+    const yearSwitch = segmented(
+      'Anzahl Jahre',
+      [2, 3, 5].map((n) => ({
+        value: n,
+        text: `${n} J`,
+        disabled: probe.available < n ? `Für ${a.name} gibt es nur ${probe.available} Jahr(e) mit Kursen ab Jahresbeginn` : undefined,
+      })),
+      count,
+      (n) => {
+        state.seasonYears = n;
+        writePrefs();
+        rerender();
+      },
+    );
+    const note =
+      probe.available < state.seasonYears
+        ? `${state.seasonYears} Jahre nicht verfügbar – ${probe.available} Jahr(e) mit Kursen ab Jahresbeginn`
+        : 'Veränderung seit Jahresbeginn in % · Wochenschlusskurse';
+    tools = [viewSwitch, yearSwitch, h('span', { class: 'muted' }, note)];
+    if (seasonal.years.length) requestAnimationFrame(() => renderSeasonal('main-chart', canvas, seasonal));
+    statsRow = h(
+      'div',
+      { class: 'stats stats-years' },
+      ...[...seasonal.years].reverse().map((y) => stat(y.current ? `${y.year} bisher` : String(y.year), pctText(y.total))),
+      seasonal.average ? stat(seasonal.average.label, pctText(seasonal.average.points.at(-1)?.y)) : null,
+    );
+  } else {
+    tools = [viewSwitch, tabs, rangeNote ? h('span', { class: 'muted' }, rangeNote) : null];
+    requestAnimationFrame(() => renderLine('main-chart', canvas, series));
+    statsRow = h(
+      'div',
+      { class: 'stats' },
+      stat(`Veränderung ${range.label}`, pctText(changePct(series, range.days + 1))),
+      stat(`Hoch ${range.label}`, fmtNumber(values.length ? Math.max(...values) : null)),
+      stat(`Tief ${range.label}`, fmtNumber(values.length ? Math.min(...values) : null)),
+      stat('Stand', p?.asOf ? fmtDateTime(p.asOf) : '–'),
+    );
+  }
 
   return h(
     'section',
@@ -334,16 +425,9 @@ function chartPanel(a: Instrument | undefined): HTMLElement {
         h('div', { class: 'price-change' }, delta(p?.change, 2, '', false), pill(p?.changePct)),
       ),
     ),
-    h('div', { class: 'panel-tools chart-tools' }, tabs, rangeNote ? h('span', { class: 'muted' }, rangeNote) : null),
+    h('div', { class: 'panel-tools chart-tools' }, ...tools),
     h('div', { class: 'chart-box' }, canvas),
-    h(
-      'div',
-      { class: 'stats' },
-      stat(`Veränderung ${range.label}`, pctText(changePct(series, range.days + 1))),
-      stat(`Hoch ${range.label}`, fmtNumber(values.length ? Math.max(...values) : null)),
-      stat(`Tief ${range.label}`, fmtNumber(values.length ? Math.min(...values) : null)),
-      stat('Stand', p?.asOf ? fmtDateTime(p.asOf) : '–'),
-    ),
+    statsRow,
   );
 }
 
