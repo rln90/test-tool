@@ -17,7 +17,7 @@ Fällt eine Quelle aus, bleibt der letzte veröffentlichte Stand stehen und wird
 
 1. **Überblick:** EZB-Einlagezins, Rendite 10 J., Steilheit der Zinskurve (10 J. – 2 J.), EUR/USD
 2. **Märkte:** Kursliste mit Tag, 1 M, 6 M und Verlauf; Klick auf eine Zeile zeigt den Chart (1 M / 3 M / 6 M)
-3. **Zinsen:** Euro-Zinskurve (EURIBOR bis 12 M, danach Pfandbriefe und AAA-Staatsanleihen) mit wählbarem Vergleich, daneben Leitzinsen, EURIBOR und Renditen
+3. **Zinsen:** Euro-Zinskurve (EURIBOR bis 12 M, danach Pfandbriefe und AAA-Staatsanleihen); Vergleich mit „vor 30 Tagen“, „vor 1 Jahr“ oder einem frei wählbaren Stichtag ab 06.09.2004 (nur auf Cloudflare); daneben Leitzinsen, EURIBOR und Renditen
 4. **Währungen:** Wechselkurse mit Tages-, 1-Monats- und 6-Monats-Veränderung
 
 ## Betrieb auf Cloudflare (empfohlen)
@@ -28,7 +28,8 @@ Ein Cloudflare Worker liefert die Seite aus und ruft die Daten selbst ab – ohn
 Cloudflare Worker „marktdaten-dashboard“
   ├─ stündlich 4 Cron-Läufe (:05 ETFs & Bitcoin, :06 Wechselkurse, :07 EZB-Leitzinsen, :08 Zinskurve) → KV-Speicher
   ├─ GET  /data/marketdata.json → Daten aus dem KV-Speicher
-  ├─ POST /api/refresh?part=…   → Button „Jetzt abrufen“ (höchstens 1× pro Minute je Bereich)
+  ├─ POST /api/refresh?part=…   → Button „Aktualisieren“ (höchstens 1× pro Minute je Bereich)
+  ├─ GET  /api/curve?date=…     → Zinskurve zu einem frei gewählten Stichtag (vergangene Tage dauerhaft zwischengespeichert)
   └─ alle anderen Pfade         → statische Seite aus dist/
 ```
 
@@ -39,7 +40,7 @@ Die Aufteilung in vier Läufe hält jeden Lauf unter dem CPU-Limit des kostenlos
 1. Cloudflare-Dashboard → *Workers & Pages* → *Create* → *Import a repository* → GitHub verbinden und `rln90/test-tool` wählen.
 2. Projektname: `marktdaten-dashboard` (muss zu `wrangler.jsonc` passen), Branch `main`,
    Build command `npm run build`, Deploy command `npx wrangler deploy`.
-3. Nach dem ersten Deploy die angezeigte `*.workers.dev`-Adresse öffnen und „Jetzt abrufen“ klicken.
+3. Nach dem ersten Deploy die angezeigte `*.workers.dev`-Adresse öffnen und „Aktualisieren“ klicken.
    Die IDs der KV-Speicher stehen in `wrangler.jsonc` (Produktiv- und Vorschau-Speicher).
 4. Optional, damit nur du die Seite sehen kannst: *Zero Trust → Access → Applications* → Self-hosted-Anwendung für die
    Worker-Adresse, Richtlinie „Allow“ mit deiner E-Mail-Adresse, Anmeldung per One-time PIN (kostenlos bis 50 Nutzer).
@@ -49,7 +50,7 @@ Jeder Push auf `main` baut und veröffentlicht automatisch neu.
 
 **Vorschau:** Für jeden Pull Request legt Cloudflare eine Vorschau-Version an und schreibt ihre Adresse als Kommentar in den
 Pull Request. Vorschauen nutzen den eigenen KV-Speicher `marktdaten-dashboard-preview` und haben keine stündlichen Läufe –
-Daten dort per „Jetzt abrufen“ laden. Vorschau-Adressen sind öffentlich erreichbar.
+Daten dort per „Aktualisieren“ laden. Vorschau-Adressen sind öffentlich erreichbar.
 
 ```bash
 npm run cf:dev     # Worker lokal starten (Cron testen: http://localhost:8787/__scheduled?cron=5+*+*+*+*)
@@ -59,7 +60,7 @@ npm run deploy     # manuell veröffentlichen (wrangler login nötig)
 ## Betrieb über GitHub Pages (bisherig)
 
 ```
-GitHub Actions (stündlich Mo–Fr, bei Push auf main, oder per Button „Jetzt abrufen“)
+GitHub Actions (stündlich Mo–Fr, bei Push auf main, oder per Button „Aktualisieren“)
   └─ npm run fetch-data  → public/data/marketdata.json
   └─ npm run build       → dist/
   └─ Veröffentlichung auf GitHub Pages
@@ -79,7 +80,7 @@ npm run sample-data   # synthetische Beispieldaten zum Testen der Oberfläche
 ## Konfiguration
 
 - `data.config.json`: Instrumente (Yahoo-Symbole), Währungen, EZB-Zinsreihen, Laufzeiten der Zinskurve.
-- `public/app-config.json`: Neulade-Intervall im Browser und GitHub-Angaben für den Button „Jetzt abrufen“.
+- `public/app-config.json`: Neulade-Intervall im Browser und GitHub-Angaben für den Button „Aktualisieren“.
 - `.github/workflows/dashboard.yml`: Zeitplan des Datenabrufs auf GitHub.
 - `wrangler.jsonc`, `worker/index.js`: Cloudflare Worker (Zeitplan unter `triggers.crons`).
 - `scripts/lib/collect.mjs`: gemeinsamer Datenabruf für GitHub-Skript und Worker.
@@ -88,4 +89,4 @@ npm run sample-data   # synthetische Beispieldaten zum Testen der Oberfläche
 
 1. *Settings → Pages → Build and deployment → Source: GitHub Actions*.
 2. Änderungen nach `main` mergen; der Workflow läuft danach automatisch.
-3. Für den Button „Jetzt abrufen“: ein [Fine-grained Token](https://github.com/settings/personal-access-tokens/new) nur für dieses Repository mit der Berechtigung *Actions: Read and write* anlegen. Das Dashboard fragt beim ersten Klick danach und speichert es nur im Browser.
+3. Für den Button „Aktualisieren“: ein [Fine-grained Token](https://github.com/settings/personal-access-tokens/new) nur für dieses Repository mit der Berechtigung *Actions: Read and write* anlegen. Das Dashboard fragt beim ersten Klick danach und speichert es nur im Browser.

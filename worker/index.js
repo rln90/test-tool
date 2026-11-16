@@ -7,9 +7,10 @@
  *  - GET  /data/marketdata.json  → alle Teilbereiche zusammengeführt
  *  - GET  /app-config.json       → Konfiguration für den Browser (Abruf über /api/refresh)
  *  - POST /api/refresh?part=…    → Teilbereich sofort neu abrufen („Jetzt abrufen“)
+ *  - GET  /api/curve?date=…      → Zinskurve zu einem frei gewählten Stichtag (zwischengespeichert)
  */
 import config from '../data.config.json';
-import { collectData, mergeParts, NoDataError, PARTS, summarize } from '../scripts/lib/collect.mjs';
+import { collectData, fetchCurveAt, mergeParts, NoDataError, PARTS, summarize } from '../scripts/lib/collect.mjs';
 
 /** Welcher Cron-Ausdruck welchen Teilbereich abruft (muss zu wrangler.jsonc passen). */
 const CRON_PART = {
@@ -66,7 +67,38 @@ async function serveAppConfig(request, env) {
   const res = await env.ASSETS.fetch(new Request(new URL('/app-config.json', request.url)));
   const cfg = res.ok ? await res.json() : {};
   delete cfg.github; // Auf Cloudflare startet der Button den Abruf direkt, ohne GitHub.
-  return json({ ...cfg, refreshUrl: 'api/refresh', refreshParts: PARTS });
+  return json({ ...cfg, refreshUrl: 'api/refresh', refreshParts: PARTS, curveUrl: 'api/curve', curveMinDate: CURVE_MIN_DATE });
+}
+
+/** Frühester Stichtag: Beginn der AAA-Zinskurve der EZB. */
+const CURVE_MIN_DATE = '2004-09-06';
+
+/**
+ * Zinskurve zu einem frei gewählten Stichtag. Vergangene Stichtage ändern sich nicht mehr und werden
+ * dauerhaft im KV-Speicher abgelegt; die letzten 7 Tage nur für eine Stunde.
+ */
+async function serveCurveAt(request, env) {
+  const date = new URL(request.url).searchParams.get('date') ?? '';
+  const today = new Date().toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date))) {
+    return json({ error: 'Bitte ein Datum im Format JJJJ-MM-TT angeben.' }, 400);
+  }
+  if (date < CURVE_MIN_DATE || date > today) {
+    return json({ error: `Bitte ein Datum zwischen ${CURVE_MIN_DATE.split('-').reverse().join('.')} und heute wählen.` }, 400);
+  }
+  const key = `curve:${date}`;
+  const cached = await env.DATA.get(key, 'json');
+  if (cached) return json(cached);
+
+  const result = await fetchCurveAt(config, date);
+  if (!result.lines.length) {
+    return json({ error: 'Für diesen Tag liegen keine Zinsdaten vor.', ...result }, 404);
+  }
+  const recent = Date.now() - Date.parse(date) < 7 * 86400000;
+  if (!result.errors) {
+    await env.DATA.put(key, JSON.stringify(result), recent ? { expirationTtl: 3600 } : undefined);
+  }
+  return json(result);
 }
 
 async function handleRefresh(request, env) {
@@ -90,6 +122,7 @@ export default {
     if (pathname === '/data/marketdata.json') return serveData(env);
     if (pathname === '/app-config.json') return serveAppConfig(request, env);
     if (pathname === '/api/refresh') return handleRefresh(request, env);
+    if (pathname === '/api/curve') return serveCurveAt(request, env);
     return env.ASSETS.fetch(request);
   },
 

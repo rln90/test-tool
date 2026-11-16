@@ -49,7 +49,7 @@ function perfMeasure(key, label, series, days) {
   return { key, label, value, unit: '%', decimals: 1 };
 }
 
-const deDate = (iso) => new Date(iso).toLocaleDateString('de-DE');
+const deDate = (iso) => new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
 // ---------- Yahoo Finance ----------
 
@@ -177,7 +177,9 @@ async function sdmx(name, url, dimIndex) {
   }
   if (res.status === 404) return new Map();
   if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
-  const raw = await res.json();
+  const text = await res.text();
+  if (!text.trim()) return new Map(); // keine Daten im Zeitraum (z. B. vor Beginn der Reihe)
+  const raw = JSON.parse(text);
   const json = raw.data ?? raw; // Bundesbank verpackt die Antwort in „data“
   const dims = json.structure.dimensions;
   const times = dims.observation[0].values.map((v) => v.id);
@@ -284,6 +286,57 @@ async function curveSegment(seg, maturities, params, limit) {
   return new Map([...map].map(([code, series]) => [byCode.get(code) ?? code, series]));
 }
 
+/** Punkte eines Abschnitts zum Stichtag (jeweils letzter Wert bis einschließlich date). */
+function curvePointsAt(seg, map, date) {
+  const pts = [];
+  let asOf = '';
+  for (const m of Object.keys(seg.maturities)) {
+    const p = valueAtOrBefore(map.get(m) ?? [], date);
+    if (p) {
+      pts.push({ label: m, years: maturityYears(m), v: p.v });
+      if (p.t > asOf) asOf = p.t;
+    }
+  }
+  return { pts, asOf };
+}
+
+/** Je langem Abschnitt eine Linie: EURIBOR-Punkte + Punkte des Abschnitts. maps[0] = EURIBOR. */
+function buildCurveLines(cfg, maps, date, when) {
+  const short = curvePointsAt(cfg.short, maps[0], date);
+  const lines = [];
+  cfg.long.forEach((seg, i) => {
+    const long = curvePointsAt(seg, maps[i + 1], date);
+    if (!long.pts.length) return;
+    const asOf = [short.asOf, long.asOf].filter(Boolean).sort().at(-1);
+    lines.push({ label: seg.label, curve: seg.id, when, asOf, points: [...short.pts, ...long.pts] });
+  });
+  return lines;
+}
+
+/**
+ * Zinskurve zu einem frei gewählten Stichtag (Format JJJJ-MM-TT). Liefert pro Kurve den letzten
+ * verfügbaren Stand bis einschließlich dieses Tages (Wochenenden/Feiertage → Vortag).
+ */
+export async function fetchCurveAt(cfg, date) {
+  config = cfg;
+  historyDays = cfg.historyDays ?? 180;
+  const c = config.curve;
+  const segments = [c.short, ...c.long];
+  const limit = createLimiter(2);
+  const errors = [];
+  const from = isoDate(new Date(new Date(date).getTime() - 10 * DAY));
+  const maps = await Promise.all(
+    segments.map((seg) =>
+      curveSegment(seg, Object.keys(seg.maturities), { startPeriod: from, endPeriod: date }, limit).catch((err) => {
+        errors.push(`${seg.label}: ${errMsg(err)}`);
+        return new Map();
+      }),
+    ),
+  );
+  const lines = buildCurveLines(c, maps, date, `am ${deDate(date)}`);
+  return { date, lines, ...(errors.length ? { errors } : {}) };
+}
+
 /**
  * Euro-Zinskurve: kurzes Ende aus EURIBOR, ab 2 Jahren je eine Linie pro langem Abschnitt
  * (Pfandbriefe der Bundesbank, AAA-Staatsanleihen der EZB) – aktuell und zu Vergleichsterminen.
@@ -344,31 +397,10 @@ async function fetchCurve() {
     const history = new Map(histories);
 
     // 3) Linien: EURIBOR-Punkte + Punkte des jeweiligen langen Abschnitts
-    const pointsAt = (seg, map, date) => {
-      const pts = [];
-      let asOf = '';
-      for (const m of Object.keys(seg.maturities)) {
-        const p = valueAtOrBefore(map.get(m) ?? [], date);
-        if (p) {
-          pts.push({ label: m, years: maturityYears(m), v: p.v });
-          if (p.t > asOf) asOf = p.t;
-        }
-      }
-      return { pts, asOf };
-    };
-    const addLines = (maps, date, when) => {
-      const short = pointsAt(cfg.short, maps[0], date);
-      cfg.long.forEach((seg, i) => {
-        const long = pointsAt(seg, maps[i + 1], date);
-        if (!long.pts.length) return;
-        const asOf = [short.asOf, long.asOf].filter(Boolean).sort().at(-1);
-        out.lines.push({ label: seg.label, curve: seg.id, when, asOf, points: [...short.pts, ...long.pts] });
-      });
-    };
-    addLines(latest, '9999-12-31', 'Aktuell');
+    out.lines.push(...buildCurveLines(cfg, latest, '9999-12-31', 'Aktuell'));
     compares.forEach(({ d, target }, i) => {
       const when = d >= 365 ? `vor ${Math.round(d / 365)} Jahr${d >= 730 ? 'en' : ''}` : `vor ${d} Tagen`;
-      addLines(compareMaps[i], target, when);
+      out.lines.push(...buildCurveLines(cfg, compareMaps[i], target, when));
     });
 
     // 4) Kennzahlen mit Verlauf

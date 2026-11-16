@@ -1,10 +1,11 @@
-import { ArrowDownRight, ArrowUpRight, History, Minus, TriangleAlert } from 'lucide';
+import { ArrowDownRight, ArrowUpRight, CalendarDays, History, Minus, TriangleAlert } from 'lucide';
+import { loadCurveAt } from './api';
 import { h } from './dom';
 import { icon } from './icons';
 import { normalizeCurveLines, pruneCharts, renderCurve, renderLine } from './charts';
 import { fmtDate, fmtDateTime, fmtNumber, fmtSigned, trendClass } from './format';
 import { sparkline } from './sparkline';
-import type { Curve, Instrument, MarketData, Measure, Point } from './types';
+import type { Curve, CurveLine, Instrument, MarketData, Measure, Point } from './types';
 
 // ---------- Zustand (gewähltes Instrument, Zeitraum) ----------
 
@@ -173,7 +174,7 @@ function overview(data: MarketData): HTMLElement | null {
     { class: 'kpis' },
     kpi('EZB-Einlagezins', dfr),
     kpi('Rendite 10 J. (AAA)', y10),
-    kpi('Zinskurve 10 J. – 2 J.', spread),
+    kpi('Spread AAA 10 J. – 2 J.', spread),
     kpi('EUR / USD', usd, { decimals: 4 }),
   );
 }
@@ -341,36 +342,106 @@ function ratesPanel(rates: Instrument | undefined, curve: Curve | undefined): HT
   return panel('Leitzinsen & Renditen', first ? `Veränderung ${first}` : null, list);
 }
 
+// Zinskurven zu frei gewählten Stichtagen (vom Worker geladen), je Datum zwischengespeichert.
+const curveAtCache = new Map<string, { loading: boolean; lines: CurveLine[]; error?: string }>();
+let curveSource: { url: string; minDate: string } | null = null;
+
+/** Aktiviert die freie Datumsauswahl (nur wenn der Cloudflare Worker /api/curve anbietet). */
+export function setCurveSource(url: string | undefined, minDate: string | undefined): void {
+  curveSource = url ? { url, minDate: minDate ?? '2004-09-06' } : null;
+}
+
+const CUSTOM = 'datum:';
+
+function requestCurveAt(date: string): void {
+  if (!curveSource || curveAtCache.get(date)?.loading || curveAtCache.get(date)?.lines.length) return;
+  curveAtCache.set(date, { loading: true, lines: [] });
+  loadCurveAt(curveSource.url, date)
+    .then((r) =>
+      curveAtCache.set(date, {
+        loading: false,
+        lines: r.lines,
+        error: r.lines.length ? (r.errors?.length ? 'Teilweise nicht verfügbar.' : undefined) : 'Für diesen Tag liegen keine Daten vor.',
+      }),
+    )
+    .catch((err: unknown) => curveAtCache.set(date, { loading: false, lines: [], error: err instanceof Error ? err.message : String(err) }))
+    .finally(rerender);
+}
+
 function curvePanel(curve: Curve | undefined): HTMLElement {
   if (!curve?.lines.length) return panel('Euro-Zinskurve', null, h('div', { class: 'empty' }, curve?.error ?? 'Keine Daten.'));
   const lines = normalizeCurveLines(curve);
-  const compareOptions = [...new Set(lines.map((l) => l.when).filter((w) => w !== 'Aktuell'))];
-  const compare = state.compare && compareOptions.includes(state.compare) ? state.compare : null;
+  const presets = [...new Set(lines.map((l) => l.when).filter((w) => w !== 'Aktuell'))];
+  const customDate = state.compare?.startsWith(CUSTOM) && curveSource ? state.compare.slice(CUSTOM.length) : null;
+  const preset = !customDate && state.compare && presets.includes(state.compare) ? state.compare : null;
 
+  // Vergleichslinien: Voreinstellung aus den gespeicherten Daten oder frei gewählter Stichtag
+  let compareLines: CurveLine[] = preset ? lines.filter((l) => l.when === preset) : [];
+  let customInfo: HTMLElement | null = null;
+  if (customDate) {
+    requestCurveAt(customDate);
+    const entry = curveAtCache.get(customDate);
+    compareLines = entry?.lines ?? [];
+    if (entry?.loading) customInfo = h('span', { class: 'muted' }, 'Lade …');
+    else if (entry?.error) customInfo = h('span', { class: 'field-error' }, icon(TriangleAlert, 12), entry.error);
+    else if (compareLines.length) {
+      const asOf = compareLines.map((l) => l.asOf).sort().at(-1);
+      if (asOf && asOf !== customDate) customInfo = h('span', { class: 'muted' }, `letzter Handelstag: ${fmtDate(asOf, true)}`);
+    }
+  }
+
+  const choose = (value: string | null) => {
+    state.compare = value;
+    writePrefs();
+    rerender();
+  };
   const tabs = h(
     'div',
-    { class: 'tabs', role: 'tablist', 'aria-label': 'Vergleich' },
-    ...[null, ...compareOptions].map((w) => {
-      const active = w === compare;
-      const b = h('button', { type: 'button', role: 'tab', class: `tab${active ? ' active' : ''}`, 'aria-selected': String(active) }, w ?? 'Keiner');
-      b.addEventListener('click', () => {
-        state.compare = w;
-        writePrefs();
-        rerender();
-      });
+    { class: 'tabs', role: 'group', 'aria-label': 'Vergleich mit' },
+    ...[null, ...presets].map((w) => {
+      const active = !customDate && w === preset;
+      const b = h('button', { type: 'button', class: `tab${active ? ' active' : ''}`, 'aria-pressed': String(active) }, w ?? 'Keiner');
+      b.addEventListener('click', () => choose(w));
       return b;
     }),
   );
 
+  let dateField: HTMLElement | null = null;
+  if (curveSource) {
+    const today = new Date().toISOString().slice(0, 10);
+    const input = h('input', {
+      type: 'date',
+      id: 'curve-date',
+      class: `date-input${customDate ? ' active' : ''}`,
+      min: curveSource.minDate,
+      max: today,
+      value: customDate ?? '',
+      'aria-label': 'Stichtag für den Vergleich',
+    });
+    input.addEventListener('change', () => {
+      const v = input.value;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(v) && v >= curveSource!.minDate && v <= today) choose(CUSTOM + v);
+      else if (!v) choose(null);
+    });
+    dateField = h('label', { class: 'date-field', for: 'curve-date' }, icon(CalendarDays, 14), h('span', { class: 'sr-only' }, 'Stichtag'), input);
+  }
+
   const canvas = h('canvas', { 'aria-label': `Zinskurve ${curve.name}`, role: 'img' });
-  requestAnimationFrame(() => renderCurve('curve-chart', canvas, curve, compare));
+  requestAnimationFrame(() => renderCurve('curve-chart', canvas, curve, compareLines));
   const asOf = lines.filter((l) => l.when === 'Aktuell').map((l) => l.asOf).sort().at(-1);
   const legacy = !curve.lines.some((l) => l.when);
   return panel(
     'Euro-Zinskurve',
-    `${legacy ? 'AAA-Staatsanleihen' : 'EURIBOR bis 12 M, danach Pfandbriefe und AAA-Staatsanleihen'}${asOf ? ` · Stand ${fmtDate(asOf, true)}` : ''}`,
+    `${legacy ? 'AAA-Staatsanleihen' : 'EURIBOR bis 12 M, ab 2 J. Pfandbriefe und AAA-Staatsanleihen'}${asOf ? ` · Stand ${fmtDate(asOf, true)}` : ''}`,
     staleBadge(curve),
-    compareOptions.length ? h('div', { class: 'panel-tools' }, h('span', { class: 'muted' }, 'Vergleich:'), tabs) : null,
+    h(
+      'div',
+      { class: 'panel-tools' },
+      h('span', { class: 'muted' }, 'Vergleich mit'),
+      presets.length ? tabs : null,
+      dateField,
+      customInfo,
+    ),
     h('div', { class: 'chart-box tall' }, canvas),
   );
 }
@@ -389,7 +460,7 @@ function fxPanel(fx: Instrument | undefined): HTMLElement {
       { class: 'row' },
       h('td', { class: 'name-cell' }, h('div', { class: 'name' }, code), h('div', { class: 'meta' }, rest.join(' '))),
       h('td', { class: 'num' }, fmtNumber(m.value, decimals)),
-      h('td', { class: 'num' }, delta(d, decimals, '', true)),
+      h('td', { class: 'num hide-sm' }, delta(d, decimals, '', true)),
       h('td', { class: 'num' }, h('span', { class: 'num flat' }, fmtSigned(dPct, 2, ' %'))),
       h('td', { class: 'num hide-sm' }, h('span', { class: 'num flat' }, fmtSigned(changePct(m.series, 30), 1, ' %'))),
       h('td', { class: 'num hide-sm' }, h('span', { class: 'num flat' }, fmtSigned(changePct(m.series, 183), 1, ' %'))),
@@ -407,7 +478,7 @@ function fxPanel(fx: Instrument | undefined): HTMLElement {
         {},
         h('th', { scope: 'col' }, 'Währung'),
         h('th', { scope: 'col', class: 'num' }, 'Kurs'),
-        h('th', { scope: 'col', class: 'num' }, 'Tag'),
+        h('th', { scope: 'col', class: 'num hide-sm' }, 'Tag'),
         h('th', { scope: 'col', class: 'num' }, 'Tag %'),
         h('th', { scope: 'col', class: 'num hide-sm' }, '1 M'),
         h('th', { scope: 'col', class: 'num hide-sm' }, '6 M'),
@@ -436,6 +507,9 @@ function problems(data: MarketData): HTMLElement | null {
 function rerender(): void {
   if (lastContainer && lastData) renderData(lastContainer, lastData);
 }
+
+/** Neu zeichnen, z. B. nach Wechsel zwischen hellem und dunklem Erscheinungsbild. */
+export const rerenderCharts = rerender;
 
 export function renderData(container: HTMLElement, data: MarketData): void {
   lastData = data;

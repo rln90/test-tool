@@ -20,7 +20,7 @@
       },
       {
         "id": "msci-world-it",
-        "name": "MSCI World Information Technology",
+        "name": "MSCI World IT",
         "note": "Xtrackers · USD (Acc)",
         "symbol": "XDWT.DE",
         "group": "ETF"
@@ -35,7 +35,7 @@
       {
         "id": "bitcoin",
         "name": "Bitcoin",
-        "note": "in Euro, Handel rund um die Uhr",
+        "note": "Krypto · Handel 24/7",
         "symbol": "BTC-EUR",
         "group": "Krypto"
       }

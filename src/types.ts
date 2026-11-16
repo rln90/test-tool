@@ -107,6 +107,17 @@ export interface AppConfig {
   /** Endpunkt für sofortigen Abruf (Cloudflare Worker), je Teilbereich per POST ?part=… */
   refreshUrl?: string;
   refreshParts?: string[];
+  /** Endpunkt für die Zinskurve zu einem frei gewählten Stichtag (nur Cloudflare Worker). */
+  curveUrl?: string;
+  curveMinDate?: string;
   /** Optionaler Hinweis oben auf der Seite, z. B. für eine Vorschau. */
   notice?: string;
+}
+
+/** Antwort von /api/curve: Zinskurve zu einem frei gewählten Stichtag. */
+export interface CurveAtResponse {
+  date: string;
+  lines: CurveLine[];
+  errors?: string[];
+  error?: string;
 }
