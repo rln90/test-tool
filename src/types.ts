@@ -44,8 +44,10 @@ export interface Instrument {
   currency?: string;
   source?: string;
   price?: Price;
-  /** Kursverlauf. */
+  /** Kursverlauf (Tageskurse, ca. 6 Monate). */
   series?: Point[];
+  /** Älterer Verlauf als Wochenkurse (bis 5 Jahre), endet vor dem ersten Punkt von series. */
+  longSeries?: Point[];
   measures: Measure[];
   /** Fehlermeldung, falls dieses Instrument beim Abruf nicht geladen werden konnte. */
   error?: string;
@@ -107,6 +109,17 @@ export interface AppConfig {
   /** Endpunkt für sofortigen Abruf (Cloudflare Worker), je Teilbereich per POST ?part=… */
   refreshUrl?: string;
   refreshParts?: string[];
+  /** Endpunkt für die Zinskurve zu einem frei gewählten Stichtag (nur Cloudflare Worker). */
+  curveUrl?: string;
+  curveMinDate?: string;
   /** Optionaler Hinweis oben auf der Seite, z. B. für eine Vorschau. */
   notice?: string;
+}
+
+/** Antwort von /api/curve: Zinskurve zu einem frei gewählten Stichtag. */
+export interface CurveAtResponse {
+  date: string;
+  lines: CurveLine[];
+  errors?: string[];
+  error?: string;
 }

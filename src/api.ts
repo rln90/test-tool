@@ -1,4 +1,4 @@
-import type { AppConfig, MarketData } from './types';
+import type { AppConfig, CurveAtResponse, MarketData } from './types';
 
 const DEFAULT_CONFIG: AppConfig = {
   dataUrl: 'data/marketdata.json',
@@ -36,6 +36,8 @@ export async function loadConfig(): Promise<AppConfig> {
       notice: typeof cfg.notice === 'string' ? cfg.notice : undefined,
       refreshUrl: typeof cfg.refreshUrl === 'string' ? cfg.refreshUrl : undefined,
       refreshParts: Array.isArray(cfg.refreshParts) ? cfg.refreshParts : undefined,
+      curveUrl: typeof cfg.curveUrl === 'string' ? cfg.curveUrl : undefined,
+      curveMinDate: typeof cfg.curveMinDate === 'string' ? cfg.curveMinDate : undefined,
       github: cfg.github?.owner && cfg.github.repo && cfg.github.workflow ? cfg.github : undefined,
     };
   } catch {
@@ -69,4 +71,18 @@ export async function refreshViaWorker(url: string, parts: string[]): Promise<{ 
   if (!failed.length) return { ok: true };
   const messages = [...new Set(failed.map((r) => r.message).filter(Boolean))];
   return { ok: failed.length < results.length, message: messages.join(' ') || 'Abruf fehlgeschlagen.' };
+}
+
+/** Zinskurve zu einem Stichtag über den Worker laden (vergangene Tage liegen dort im Zwischenspeicher). */
+export async function loadCurveAt(url: string, date: string): Promise<CurveAtResponse> {
+  const sep = url.includes('?') ? '&' : '?';
+  let res: Response;
+  try {
+    res = await fetch(`${url}${sep}date=${encodeURIComponent(date)}`, { cache: 'no-store' });
+  } catch {
+    throw new Error('Server nicht erreichbar.');
+  }
+  const body = (await res.json().catch(() => ({}))) as Partial<CurveAtResponse>;
+  if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+  return { date, lines: body.lines ?? [], errors: body.errors };
 }

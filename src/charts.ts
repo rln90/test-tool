@@ -104,44 +104,71 @@ export function normalizeCurveLines(curve: Curve): Required<CurveLine>[] {
   }));
 }
 
+/** Hinterlegt den EURIBOR-Abschnitt (bis 12 M) der Zinskurve mit einer hellen Fläche und Beschriftung. */
+const moneyMarketBand = {
+  id: 'moneyMarketBand',
+  beforeDatasetsDraw(chart: Chart) {
+    const opts = (chart.options.plugins as Record<string, unknown>).moneyMarketBand as { lastIndex?: number } | undefined;
+    const last = opts?.lastIndex;
+    if (last === undefined || last < 0) return;
+    const x = chart.scales.x;
+    const { top, bottom, left } = chart.chartArea;
+    const step = chart.data.labels && chart.data.labels.length > 1 ? x.getPixelForValue(1) - x.getPixelForValue(0) : 0;
+    const right = x.getPixelForValue(last) + step / 2;
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.fillStyle = cssVar('--band');
+    ctx.fillRect(left, top, right - left, bottom - top);
+    ctx.fillStyle = cssVar('--muted');
+    ctx.font = '600 11px system-ui, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('EURIBOR', left + 6, top + 6);
+    ctx.restore();
+  },
+};
+
 /**
  * Zeichnet die Zinskurve: aktuelle Linien kräftig in eigener Farbe je Kurve,
- * der gewählte Vergleichsstand gestrichelt in derselben Farbe.
+ * Vergleichslinien (Stichtag) gestrichelt in derselben Farbe.
  */
-export function renderCurve(id: string, canvas: HTMLCanvasElement, curve: Curve, compareWhen: string | null): void {
+export function renderCurve(id: string, canvas: HTMLCanvasElement, curve: Curve, compareLines: CurveLine[]): void {
   charts.get(id)?.destroy();
   const muted = cssVar('--muted');
   const grid = cssVar('--grid');
-  const colorFor = (key: string) => (key === 'pfandbrief' ? cssVar('--series-2') : cssVar('--accent'));
+  const colorFor = (key: string | undefined) => (key === 'pfandbrief' ? cssVar('--series-2') : cssVar('--accent'));
   const unit = curve.unit ? ` ${curve.unit}` : '';
 
-  const lines = normalizeCurveLines(curve).filter((l) => l.when === 'Aktuell' || l.when === compareWhen);
+  const current = normalizeCurveLines(curve).filter((l) => l.when === 'Aktuell');
+  const lines = [...current.map((l) => ({ ...l, isCurrent: true })), ...compareLines.map((l) => ({ ...l, isCurrent: false }))];
   // Alle Laufzeiten aller Linien, nach Länge sortiert
   const years = new Map<string, number>();
   for (const l of lines) for (const p of l.points) years.set(p.label, p.years);
   const labels = [...years].sort((a, b) => a[1] - b[1]).map(([label]) => label);
+  const lastMoneyMarket = labels.reduce((acc, l, i) => ((years.get(l) ?? 99) < 1.5 ? i : acc), -1);
 
   const datasets = lines.map((line) => {
-    const current = line.when === 'Aktuell';
     const byLabel = new Map(line.points.map((p) => [p.label, p.v]));
     const color = colorFor(line.curve);
     return {
-      label: current ? `${line.label} (${fmtDate(line.asOf)})` : `${line.label} ${line.when} (${fmtDate(line.asOf)})`,
+      label: `${line.label} · ${line.isCurrent ? 'aktuell' : fmtDate(line.asOf, true)}`,
       data: labels.map((l) => byLabel.get(l) ?? null),
-      borderColor: current ? color : `${color}99`,
-      backgroundColor: current ? color : `${color}99`,
-      borderWidth: current ? 2.5 : 1.5,
-      borderDash: current ? [] : [5, 4],
-      pointRadius: current ? 3 : 0,
+      borderColor: line.isCurrent ? color : `${color}aa`,
+      backgroundColor: line.isCurrent ? color : `${color}aa`,
+      borderWidth: line.isCurrent ? 2.5 : 1.75,
+      borderDash: line.isCurrent ? [] : [6, 4],
+      pointRadius: line.isCurrent ? 3 : 0,
       pointHoverRadius: 4,
       tension: 0.3,
       spanGaps: false,
     };
   });
 
+  const narrow = canvas.parentElement ? canvas.parentElement.clientWidth < 520 : false;
   const chart = new Chart(canvas, {
     type: 'line',
     data: { labels: labels.map(maturityLabel), datasets },
+    plugins: [moneyMarketBand],
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -158,12 +185,13 @@ export function renderCurve(id: string, canvas: HTMLCanvasElement, curve: Curve,
             label: (ctx) => (ctx.parsed.y === null ? '' : `${ctx.dataset.label}: ${fmtNumber(ctx.parsed.y, 2)}${unit}`),
           },
         },
+        ...({ moneyMarketBand: { lastIndex: lastMoneyMarket } } as object),
       },
       scales: {
         x: {
           grid: { display: false },
-          ticks: { color: muted, autoSkip: false, maxRotation: 0 },
-          title: { display: true, text: 'Laufzeit (EURIBOR bis 12 M, danach Anleihen)', color: muted },
+          ticks: { color: muted, autoSkip: narrow, autoSkipPadding: 6, maxRotation: 0, font: { size: narrow ? 10 : 12 } },
+          title: { display: !narrow, text: 'Laufzeit', color: muted },
         },
         y: {
           position: 'right',

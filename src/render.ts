@@ -1,10 +1,11 @@
-import { ArrowDownRight, ArrowUpRight, History, Minus, TriangleAlert } from 'lucide';
+import { ArrowDownRight, ArrowUpRight, CalendarDays, History, Minus, TriangleAlert } from 'lucide';
+import { loadCurveAt } from './api';
 import { h } from './dom';
 import { icon } from './icons';
 import { normalizeCurveLines, pruneCharts, renderCurve, renderLine } from './charts';
 import { fmtDate, fmtDateTime, fmtNumber, fmtSigned, trendClass } from './format';
 import { sparkline } from './sparkline';
-import type { Curve, Instrument, MarketData, Measure, Point } from './types';
+import type { Curve, CurveLine, Instrument, MarketData, Measure, Point } from './types';
 
 // ---------- Zustand (gewähltes Instrument, Zeitraum) ----------
 
@@ -12,7 +13,13 @@ const RANGES = [
   { key: '1M', label: '1 M', days: 30 },
   { key: '3M', label: '3 M', days: 91 },
   { key: '6M', label: '6 M', days: 183 },
+  { key: '1Y', label: '1 J', days: 365 },
+  { key: '2Y', label: '2 J', days: 730 },
+  { key: '3Y', label: '3 J', days: 1096 },
+  { key: '5Y', label: '5 J', days: 1826 },
 ] as const;
+/** Ab hier stammen ältere Punkte aus Wochenkursen. */
+const DAILY_DAYS = 183;
 type RangeKey = (typeof RANGES)[number]['key'];
 
 const PREF_KEY = 'marktdaten-dashboard:auswahl';
@@ -173,7 +180,7 @@ function overview(data: MarketData): HTMLElement | null {
     { class: 'kpis' },
     kpi('EZB-Einlagezins', dfr),
     kpi('Rendite 10 J. (AAA)', y10),
-    kpi('Zinskurve 10 J. – 2 J.', spread),
+    kpi('Spread AAA 10 J. – 2 J.', spread),
     kpi('EUR / USD', usd, { decimals: 4 }),
   );
 }
@@ -246,10 +253,26 @@ function watchlist(assets: Instrument[], selected: Instrument | undefined): HTML
   return panel('Kursliste', 'Zeile anklicken für den Chart', h('div', { class: 'table-wrap' }, table));
 }
 
+/** Wochenkurse (vor Beginn der Tageskurse) + Tageskurse als ein durchgehender Verlauf. */
+function fullSeries(a: Instrument): Point[] {
+  const daily = a.series ?? [];
+  const first = daily[0]?.t;
+  const older = (a.longSeries ?? []).filter((p) => !first || p.t < first);
+  return [...older, ...daily];
+}
+
 function chartPanel(a: Instrument | undefined): HTMLElement {
   if (!a) return panel('Chart', null, h('div', { class: 'empty' }, 'Keine Kursdaten vorhanden.'));
-  const range = RANGES.find((r) => r.key === state.range) ?? RANGES[2];
-  const series = sliceDays(a.series, range.days);
+  const all = fullSeries(a);
+  const lastT = all.at(-1)?.t;
+  const firstT = all[0]?.t;
+  // Ein Zeitraum ist verfügbar, wenn der Verlauf (mit 14 Tagen Spielraum) weit genug zurückreicht.
+  const available = (r: (typeof RANGES)[number]) =>
+    r.days <= DAILY_DAYS || (!!firstT && !!lastT && firstT <= shiftDate(lastT, r.days - 14));
+  const wanted = RANGES.find((r) => r.key === state.range) ?? RANGES[2];
+  const range = available(wanted) ? wanted : [...RANGES].reverse().find(available) ?? RANGES[2];
+  // Bis 6 Monate nur Tageskurse (genauer, gleiche Basis wie die Kursliste), darüber mit Wochenkursen.
+  const series = sliceDays(range.days <= DAILY_DAYS ? (a.series ?? []) : all, range.days);
   const values = series.map((p) => p.v);
   const p = a.price;
 
@@ -257,11 +280,20 @@ function chartPanel(a: Instrument | undefined): HTMLElement {
     'div',
     { class: 'tabs', role: 'tablist', 'aria-label': 'Zeitraum' },
     ...RANGES.map((r) => {
+      const ok = available(r);
+      const active = r.key === range.key;
       const b = h(
         'button',
-        { type: 'button', role: 'tab', class: `tab${r.key === range.key ? ' active' : ''}`, 'aria-selected': String(r.key === range.key) },
+        {
+          type: 'button',
+          role: 'tab',
+          class: `tab${active ? ' active' : ''}`,
+          'aria-selected': String(active),
+          title: ok ? `Verlauf ${r.label.replace('M', 'Monat(e)').replace('J', 'Jahr(e)')}` : `Für ${a.name} liegen Kurse erst ab ${fmtDate(firstT ?? '', true)} vor`,
+        },
         r.label,
       );
+      if (!ok) b.setAttribute('disabled', '');
       b.addEventListener('click', () => {
         state.range = r.key;
         writePrefs();
@@ -270,6 +302,12 @@ function chartPanel(a: Instrument | undefined): HTMLElement {
       return b;
     }),
   );
+  const rangeNote =
+    wanted.key !== range.key
+      ? `${wanted.label} nicht verfügbar – Kurse erst ab ${fmtDate(firstT ?? '', true)}`
+      : range.days > DAILY_DAYS
+        ? 'Ältere Werte als Wochenschlusskurse'
+        : null;
 
   const canvas = h('canvas', { 'aria-label': `Kursverlauf ${a.name}`, role: 'img' });
   requestAnimationFrame(() => renderLine('main-chart', canvas, series));
@@ -296,7 +334,7 @@ function chartPanel(a: Instrument | undefined): HTMLElement {
         h('div', { class: 'price-change' }, delta(p?.change, 2, '', false), pill(p?.changePct)),
       ),
     ),
-    tabs,
+    h('div', { class: 'panel-tools chart-tools' }, tabs, rangeNote ? h('span', { class: 'muted' }, rangeNote) : null),
     h('div', { class: 'chart-box' }, canvas),
     h(
       'div',
@@ -341,36 +379,106 @@ function ratesPanel(rates: Instrument | undefined, curve: Curve | undefined): HT
   return panel('Leitzinsen & Renditen', first ? `Veränderung ${first}` : null, list);
 }
 
+// Zinskurven zu frei gewählten Stichtagen (vom Worker geladen), je Datum zwischengespeichert.
+const curveAtCache = new Map<string, { loading: boolean; lines: CurveLine[]; error?: string }>();
+let curveSource: { url: string; minDate: string } | null = null;
+
+/** Aktiviert die freie Datumsauswahl (nur wenn der Cloudflare Worker /api/curve anbietet). */
+export function setCurveSource(url: string | undefined, minDate: string | undefined): void {
+  curveSource = url ? { url, minDate: minDate ?? '2004-09-06' } : null;
+}
+
+const CUSTOM = 'datum:';
+
+function requestCurveAt(date: string): void {
+  if (!curveSource || curveAtCache.get(date)?.loading || curveAtCache.get(date)?.lines.length) return;
+  curveAtCache.set(date, { loading: true, lines: [] });
+  loadCurveAt(curveSource.url, date)
+    .then((r) =>
+      curveAtCache.set(date, {
+        loading: false,
+        lines: r.lines,
+        error: r.lines.length ? (r.errors?.length ? 'Teilweise nicht verfügbar.' : undefined) : 'Für diesen Tag liegen keine Daten vor.',
+      }),
+    )
+    .catch((err: unknown) => curveAtCache.set(date, { loading: false, lines: [], error: err instanceof Error ? err.message : String(err) }))
+    .finally(rerender);
+}
+
 function curvePanel(curve: Curve | undefined): HTMLElement {
   if (!curve?.lines.length) return panel('Euro-Zinskurve', null, h('div', { class: 'empty' }, curve?.error ?? 'Keine Daten.'));
   const lines = normalizeCurveLines(curve);
-  const compareOptions = [...new Set(lines.map((l) => l.when).filter((w) => w !== 'Aktuell'))];
-  const compare = state.compare && compareOptions.includes(state.compare) ? state.compare : null;
+  const presets = [...new Set(lines.map((l) => l.when).filter((w) => w !== 'Aktuell'))];
+  const customDate = state.compare?.startsWith(CUSTOM) && curveSource ? state.compare.slice(CUSTOM.length) : null;
+  const preset = !customDate && state.compare && presets.includes(state.compare) ? state.compare : null;
 
+  // Vergleichslinien: Voreinstellung aus den gespeicherten Daten oder frei gewählter Stichtag
+  let compareLines: CurveLine[] = preset ? lines.filter((l) => l.when === preset) : [];
+  let customInfo: HTMLElement | null = null;
+  if (customDate) {
+    requestCurveAt(customDate);
+    const entry = curveAtCache.get(customDate);
+    compareLines = entry?.lines ?? [];
+    if (entry?.loading) customInfo = h('span', { class: 'muted' }, 'Lade …');
+    else if (entry?.error) customInfo = h('span', { class: 'field-error' }, icon(TriangleAlert, 12), entry.error);
+    else if (compareLines.length) {
+      const asOf = compareLines.map((l) => l.asOf).sort().at(-1);
+      if (asOf && asOf !== customDate) customInfo = h('span', { class: 'muted' }, `letzter Handelstag: ${fmtDate(asOf, true)}`);
+    }
+  }
+
+  const choose = (value: string | null) => {
+    state.compare = value;
+    writePrefs();
+    rerender();
+  };
   const tabs = h(
     'div',
-    { class: 'tabs', role: 'tablist', 'aria-label': 'Vergleich' },
-    ...[null, ...compareOptions].map((w) => {
-      const active = w === compare;
-      const b = h('button', { type: 'button', role: 'tab', class: `tab${active ? ' active' : ''}`, 'aria-selected': String(active) }, w ?? 'Keiner');
-      b.addEventListener('click', () => {
-        state.compare = w;
-        writePrefs();
-        rerender();
-      });
+    { class: 'tabs', role: 'group', 'aria-label': 'Vergleich mit' },
+    ...[null, ...presets].map((w) => {
+      const active = !customDate && w === preset;
+      const b = h('button', { type: 'button', class: `tab${active ? ' active' : ''}`, 'aria-pressed': String(active) }, w ?? 'Keiner');
+      b.addEventListener('click', () => choose(w));
       return b;
     }),
   );
 
+  let dateField: HTMLElement | null = null;
+  if (curveSource) {
+    const today = new Date().toISOString().slice(0, 10);
+    const input = h('input', {
+      type: 'date',
+      id: 'curve-date',
+      class: `date-input${customDate ? ' active' : ''}`,
+      min: curveSource.minDate,
+      max: today,
+      value: customDate ?? '',
+      'aria-label': 'Stichtag für den Vergleich',
+    });
+    input.addEventListener('change', () => {
+      const v = input.value;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(v) && v >= curveSource!.minDate && v <= today) choose(CUSTOM + v);
+      else if (!v) choose(null);
+    });
+    dateField = h('label', { class: 'date-field', for: 'curve-date' }, icon(CalendarDays, 14), h('span', { class: 'sr-only' }, 'Stichtag'), input);
+  }
+
   const canvas = h('canvas', { 'aria-label': `Zinskurve ${curve.name}`, role: 'img' });
-  requestAnimationFrame(() => renderCurve('curve-chart', canvas, curve, compare));
+  requestAnimationFrame(() => renderCurve('curve-chart', canvas, curve, compareLines));
   const asOf = lines.filter((l) => l.when === 'Aktuell').map((l) => l.asOf).sort().at(-1);
   const legacy = !curve.lines.some((l) => l.when);
   return panel(
     'Euro-Zinskurve',
-    `${legacy ? 'AAA-Staatsanleihen' : 'EURIBOR bis 12 M, danach Pfandbriefe und AAA-Staatsanleihen'}${asOf ? ` · Stand ${fmtDate(asOf, true)}` : ''}`,
+    `${legacy ? 'AAA-Staatsanleihen' : 'EURIBOR bis 12 M, ab 2 J. Pfandbriefe und AAA-Staatsanleihen'}${asOf ? ` · Stand ${fmtDate(asOf, true)}` : ''}`,
     staleBadge(curve),
-    compareOptions.length ? h('div', { class: 'panel-tools' }, h('span', { class: 'muted' }, 'Vergleich:'), tabs) : null,
+    h(
+      'div',
+      { class: 'panel-tools' },
+      h('span', { class: 'muted' }, 'Vergleich mit'),
+      presets.length ? tabs : null,
+      dateField,
+      customInfo,
+    ),
     h('div', { class: 'chart-box tall' }, canvas),
   );
 }
@@ -389,7 +497,7 @@ function fxPanel(fx: Instrument | undefined): HTMLElement {
       { class: 'row' },
       h('td', { class: 'name-cell' }, h('div', { class: 'name' }, code), h('div', { class: 'meta' }, rest.join(' '))),
       h('td', { class: 'num' }, fmtNumber(m.value, decimals)),
-      h('td', { class: 'num' }, delta(d, decimals, '', true)),
+      h('td', { class: 'num hide-sm' }, delta(d, decimals, '', true)),
       h('td', { class: 'num' }, h('span', { class: 'num flat' }, fmtSigned(dPct, 2, ' %'))),
       h('td', { class: 'num hide-sm' }, h('span', { class: 'num flat' }, fmtSigned(changePct(m.series, 30), 1, ' %'))),
       h('td', { class: 'num hide-sm' }, h('span', { class: 'num flat' }, fmtSigned(changePct(m.series, 183), 1, ' %'))),
@@ -407,7 +515,7 @@ function fxPanel(fx: Instrument | undefined): HTMLElement {
         {},
         h('th', { scope: 'col' }, 'Währung'),
         h('th', { scope: 'col', class: 'num' }, 'Kurs'),
-        h('th', { scope: 'col', class: 'num' }, 'Tag'),
+        h('th', { scope: 'col', class: 'num hide-sm' }, 'Tag'),
         h('th', { scope: 'col', class: 'num' }, 'Tag %'),
         h('th', { scope: 'col', class: 'num hide-sm' }, '1 M'),
         h('th', { scope: 'col', class: 'num hide-sm' }, '6 M'),
@@ -436,6 +544,9 @@ function problems(data: MarketData): HTMLElement | null {
 function rerender(): void {
   if (lastContainer && lastData) renderData(lastContainer, lastData);
 }
+
+/** Neu zeichnen, z. B. nach Wechsel zwischen hellem und dunklem Erscheinungsbild. */
+export const rerenderCharts = rerender;
 
 export function renderData(container: HTMLElement, data: MarketData): void {
   lastData = data;

@@ -49,7 +49,7 @@ function perfMeasure(key, label, series, days) {
   return { key, label, value, unit: '%', decimals: 1 };
 }
 
-const deDate = (iso) => new Date(iso).toLocaleDateString('de-DE');
+const deDate = (iso) => new Date(iso).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
 // ---------- Yahoo Finance ----------
 
@@ -59,15 +59,18 @@ const deDate = (iso) => new Date(iso).toLocaleDateString('de-DE');
  */
 function createYahooClient() {
   let queue = Promise.resolve();
-  return (symbol) => {
-    const p = queue.then(() => yahooRequest(symbol));
+  return (symbol, opts) => {
+    const p = queue.then(() => yahooRequest(symbol, opts));
     queue = p.catch(() => {}).then(() => sleep(config.yahoo.pauseMs ?? 400));
     return p;
   };
 }
 
-async function yahooRequest(symbol) {
-  const url = `${config.yahoo.baseUrl}/${encodeURIComponent(symbol)}?range=${Math.ceil(historyDays / 30)}mo&interval=1d`;
+/** opts: { range, interval } – Standard: Tageskurse über historyDays. */
+async function yahooRequest(symbol, opts = {}) {
+  const range = opts.range ?? `${Math.ceil(historyDays / 30)}mo`;
+  const interval = opts.interval ?? '1d';
+  const url = `${config.yahoo.baseUrl}/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`;
   let lastErr;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
@@ -124,6 +127,7 @@ function parseYahoo(result) {
   return {
     currency: meta.currency,
     exchange: meta.fullExchangeName ?? meta.exchangeName,
+    tradesWeekends,
     series,
     price:
       last === null
@@ -135,6 +139,21 @@ function parseYahoo(result) {
             asOf: lastTime ? lastTime.toISOString() : lastDate,
           },
   };
+}
+
+/** Langer Verlauf (z. B. 5 Jahre) als Wochenkurse, auf 4 Nachkommastellen gerundet. */
+async function fetchLongSeries(inst, yahoo) {
+  const w = parseYahoo(await yahoo(inst.symbol, { range: config.yahoo.longRange, interval: '1wk' }));
+  if (!w.series.length) throw new Error('keine Wochenkurse erhalten');
+  // Yahoo datiert Wochenkurse auf den Wochenbeginn, der Wert ist aber der Schlusskurs der Woche:
+  // auf das Wochenende verschieben (Freitag, bei Krypto Sonntag), damit Datum und Wert zusammenpassen.
+  const weekEnd = (t) => {
+    const d = new Date(`${t}T12:00:00Z`);
+    const wd = d.getUTCDay(); // 0 = Sonntag; ein Sonntag gilt als Beginn der folgenden Woche
+    const monday = d.getTime() + (wd === 0 ? 1 : 1 - wd) * DAY;
+    return isoDate(new Date(monday + (w.tradesWeekends ? 6 : 4) * DAY));
+  };
+  return w.series.map((p) => ({ t: weekEnd(p.t), v: Math.round(p.v * 1e4) / 1e4 }));
 }
 
 async function fetchYahooInstrument(inst, yahoo) {
@@ -177,7 +196,9 @@ async function sdmx(name, url, dimIndex) {
   }
   if (res.status === 404) return new Map();
   if (!res.ok) throw new Error(`${name}: HTTP ${res.status}`);
-  const raw = await res.json();
+  const text = await res.text();
+  if (!text.trim()) return new Map(); // keine Daten im Zeitraum (z. B. vor Beginn der Reihe)
+  const raw = JSON.parse(text);
   const json = raw.data ?? raw; // Bundesbank verpackt die Antwort in „data“
   const dims = json.structure.dimensions;
   const times = dims.observation[0].values.map((v) => v.id);
@@ -284,6 +305,57 @@ async function curveSegment(seg, maturities, params, limit) {
   return new Map([...map].map(([code, series]) => [byCode.get(code) ?? code, series]));
 }
 
+/** Punkte eines Abschnitts zum Stichtag (jeweils letzter Wert bis einschließlich date). */
+function curvePointsAt(seg, map, date) {
+  const pts = [];
+  let asOf = '';
+  for (const m of Object.keys(seg.maturities)) {
+    const p = valueAtOrBefore(map.get(m) ?? [], date);
+    if (p) {
+      pts.push({ label: m, years: maturityYears(m), v: p.v });
+      if (p.t > asOf) asOf = p.t;
+    }
+  }
+  return { pts, asOf };
+}
+
+/** Je langem Abschnitt eine Linie: EURIBOR-Punkte + Punkte des Abschnitts. maps[0] = EURIBOR. */
+function buildCurveLines(cfg, maps, date, when) {
+  const short = curvePointsAt(cfg.short, maps[0], date);
+  const lines = [];
+  cfg.long.forEach((seg, i) => {
+    const long = curvePointsAt(seg, maps[i + 1], date);
+    if (!long.pts.length) return;
+    const asOf = [short.asOf, long.asOf].filter(Boolean).sort().at(-1);
+    lines.push({ label: seg.label, curve: seg.id, when, asOf, points: [...short.pts, ...long.pts] });
+  });
+  return lines;
+}
+
+/**
+ * Zinskurve zu einem frei gewählten Stichtag (Format JJJJ-MM-TT). Liefert pro Kurve den letzten
+ * verfügbaren Stand bis einschließlich dieses Tages (Wochenenden/Feiertage → Vortag).
+ */
+export async function fetchCurveAt(cfg, date) {
+  config = cfg;
+  historyDays = cfg.historyDays ?? 180;
+  const c = config.curve;
+  const segments = [c.short, ...c.long];
+  const limit = createLimiter(2);
+  const errors = [];
+  const from = isoDate(new Date(new Date(date).getTime() - 10 * DAY));
+  const maps = await Promise.all(
+    segments.map((seg) =>
+      curveSegment(seg, Object.keys(seg.maturities), { startPeriod: from, endPeriod: date }, limit).catch((err) => {
+        errors.push(`${seg.label}: ${errMsg(err)}`);
+        return new Map();
+      }),
+    ),
+  );
+  const lines = buildCurveLines(c, maps, date, `am ${deDate(date)}`);
+  return { date, lines, ...(errors.length ? { errors } : {}) };
+}
+
 /**
  * Euro-Zinskurve: kurzes Ende aus EURIBOR, ab 2 Jahren je eine Linie pro langem Abschnitt
  * (Pfandbriefe der Bundesbank, AAA-Staatsanleihen der EZB) – aktuell und zu Vergleichsterminen.
@@ -344,31 +416,10 @@ async function fetchCurve() {
     const history = new Map(histories);
 
     // 3) Linien: EURIBOR-Punkte + Punkte des jeweiligen langen Abschnitts
-    const pointsAt = (seg, map, date) => {
-      const pts = [];
-      let asOf = '';
-      for (const m of Object.keys(seg.maturities)) {
-        const p = valueAtOrBefore(map.get(m) ?? [], date);
-        if (p) {
-          pts.push({ label: m, years: maturityYears(m), v: p.v });
-          if (p.t > asOf) asOf = p.t;
-        }
-      }
-      return { pts, asOf };
-    };
-    const addLines = (maps, date, when) => {
-      const short = pointsAt(cfg.short, maps[0], date);
-      cfg.long.forEach((seg, i) => {
-        const long = pointsAt(seg, maps[i + 1], date);
-        if (!long.pts.length) return;
-        const asOf = [short.asOf, long.asOf].filter(Boolean).sort().at(-1);
-        out.lines.push({ label: seg.label, curve: seg.id, when, asOf, points: [...short.pts, ...long.pts] });
-      });
-    };
-    addLines(latest, '9999-12-31', 'Aktuell');
+    out.lines.push(...buildCurveLines(cfg, latest, '9999-12-31', 'Aktuell'));
     compares.forEach(({ d, target }, i) => {
       const when = d >= 365 ? `vor ${Math.round(d / 365)} Jahr${d >= 730 ? 'en' : ''}` : `vor ${d} Tagen`;
-      addLines(compareMaps[i], target, when);
+      out.lines.push(...buildCurveLines(cfg, compareMaps[i], target, when));
     });
 
     // 4) Kennzahlen mit Verlauf
@@ -484,7 +535,7 @@ function withFallback(items, previousItems) {
 export class NoDataError extends Error {}
 
 /** Teilbereiche, die einzeln abgerufen werden können (z. B. je ein Cloudflare-Cron-Lauf). */
-export const PARTS = ['kurse', 'fx', 'ezb', 'kurve'];
+export const PARTS = ['kurse', 'fx', 'ezb', 'kurve', 'lang'];
 
 /**
  * Holt die gewünschten Teilbereiche (Standard: alle). Ausgefallene Bereiche werden durch den
@@ -508,7 +559,24 @@ export async function collectData(cfg, previous = null, parts = PARTS) {
     want('kurve') && config.curve ? fetchCurve() : null,
   ]);
 
-  const instruments = withFallback([...yahooItems, rates, fx].filter(Boolean), previous?.instruments);
+  // Teilbereich „lang“: Wochenkurse je Kurs-Instrument; bei Fehler bleibt der vorige Verlauf erhalten.
+  let longSeries;
+  if (want('lang') && config.yahoo?.longRange) {
+    longSeries = {};
+    for (const inst of config.yahoo.instruments ?? []) {
+      try {
+        longSeries[inst.id] = await fetchLongSeries(inst, yahoo);
+      } catch (err) {
+        const prev = previous?.longSeries?.[inst.id] ?? previous?.instruments?.find((x) => x.id === inst.id)?.longSeries;
+        if (prev) longSeries[inst.id] = prev;
+        console.error(`[lang:${inst.id}] ${errMsg(err)}`);
+      }
+    }
+  }
+
+  const instruments = withFallback([...yahooItems, rates, fx].filter(Boolean), previous?.instruments).map((x) =>
+    longSeries?.[x.id] ? { ...x, longSeries: longSeries[x.id] } : x,
+  );
   const curves = withFallback([curve].filter(Boolean), previous?.curves);
 
   const all = [...instruments, ...curves];
@@ -520,18 +588,21 @@ export async function collectData(cfg, previous = null, parts = PARTS) {
     source: 'Yahoo Finance, EZB, Bundesbank',
     instruments,
     curves,
+    ...(longSeries ? { longSeries } : {}),
   };
 }
 
 /** Führt getrennt abgerufene Teilbereiche in der Anzeigereihenfolge zusammen. */
 export function mergeParts(byPart) {
   const got = PARTS.map((p) => byPart[p]).filter(Boolean);
-  if (!got.length) return null;
+  if (!PARTS.some((p) => p !== 'lang' && byPart[p])) return null;
   const pick = (p) => byPart[p]?.instruments ?? [];
   return {
     generatedAt: got.map((d) => d.generatedAt).sort().at(-1),
     source: 'Yahoo Finance, EZB, Bundesbank',
-    instruments: [...pick('kurse'), ...pick('ezb'), ...pick('fx')],
+    instruments: [...pick('kurse'), ...pick('ezb'), ...pick('fx')].map((x) =>
+      byPart.lang?.longSeries?.[x.id] ? { ...x, longSeries: byPart.lang.longSeries[x.id] } : x,
+    ),
     // Ältere Datenstände hatten die Zinskurve im Teilbereich „ezb“.
     curves: byPart.kurve?.curves ?? byPart.ezb?.curves ?? [],
   };
@@ -542,5 +613,6 @@ export function summarize(data) {
   const all = [...data.instruments, ...(data.curves ?? [])];
   const ok = all.filter((x) => !x.error).length;
   const stale = all.filter((x) => x.stale).length;
-  return `${ok}/${all.length} Bereiche aktuell, ${stale} veraltet`;
+  const long = data.longSeries ? `, ${Object.keys(data.longSeries).length} Langzeitverläufe` : '';
+  return `${ok}/${all.length} Bereiche aktuell, ${stale} veraltet${long}`;
 }
