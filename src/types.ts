@@ -112,6 +112,8 @@ export interface AppConfig {
   /** Endpunkt für die Zinskurve zu einem frei gewählten Stichtag (nur Cloudflare Worker). */
   curveUrl?: string;
   curveMinDate?: string;
+  /** Standard-Gestaltung: standard | terminal | desk | research. */
+  look?: string;
   /** Optionaler Hinweis oben auf der Seite, z. B. für eine Vorschau. */
   notice?: string;
 }

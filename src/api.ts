@@ -34,6 +34,7 @@ export async function loadConfig(): Promise<AppConfig> {
       dataUrl: cfg.dataUrl || DEFAULT_CONFIG.dataUrl,
       refreshSeconds: Math.max(15, Number(cfg.refreshSeconds) || DEFAULT_CONFIG.refreshSeconds),
       notice: typeof cfg.notice === 'string' ? cfg.notice : undefined,
+      look: typeof cfg.look === 'string' ? cfg.look : undefined,
       refreshUrl: typeof cfg.refreshUrl === 'string' ? cfg.refreshUrl : undefined,
       refreshParts: Array.isArray(cfg.refreshParts) ? cfg.refreshParts : undefined,
       curveUrl: typeof cfg.curveUrl === 'string' ? cfg.curveUrl : undefined,

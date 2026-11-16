@@ -18,6 +18,8 @@
     "wrangler": "^4.162.0"
   },
   "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
     "chart.js": "^4.6.1",
     "lucide": "^1.70.0"
   }

@@ -138,11 +138,20 @@ function staleBadge(item: { error?: string; stale?: boolean }): HTMLElement | nu
   );
 }
 
+/** Kurzcodes je Bereich (sichtbar nur in der Terminal-Gestaltung). */
+const CODES: Record<string, string> = {
+  Kursliste: 'WL',
+  'Euro-Zinskurve': 'YC',
+  'Leitzinsen & Renditen': 'IR',
+  Wechselkurse: 'FX',
+};
+
 function panel(title: string, sub: string | null, ...children: Array<Node | null>): HTMLElement {
+  const code = CODES[title];
   return h(
     'section',
     { class: 'panel' },
-    h('header', { class: 'panel-head' }, h('h3', {}, title), sub ? h('span', { class: 'panel-sub' }, sub) : null),
+    h('header', { class: 'panel-head' }, h('h3', code ? { 'data-code': code } : {}, title), sub ? h('span', { class: 'panel-sub' }, sub) : null),
     ...children,
   );
 }
@@ -415,7 +424,7 @@ function chartPanel(a: Instrument | undefined): HTMLElement {
       h(
         'div',
         { class: 'chart-title' },
-        h('h3', {}, a.name, staleBadge(a)),
+        h('h3', { 'data-code': state.view === 'saison' ? 'SEAS' : 'GP' }, a.name, staleBadge(a)),
         h('div', { class: 'meta' }, [a.ticker, a.note, a.currency].filter(Boolean).join(' · ')),
       ),
       h(
