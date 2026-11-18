@@ -1,8 +1,8 @@
 /**
  * Cloudflare Worker: liefert das Dashboard aus (statische Dateien aus dist/) und hält die Daten aktuell.
  *
- *  - Stündlich fünf Läufe (Minute 5–9), je einer pro Teilbereich: ETFs & Bitcoin, Wechselkurse, EZB-Leitzinsen,
- *    Zinskurve, 5-Jahres-Verlauf. Die Aufteilung hält jeden Lauf unter dem CPU-Limit des kostenlosen Workers-Tarifs.
+ *  - Stündlich sieben Läufe (Minute 5–11), je einer pro Teilbereich: ETFs & Bitcoin, Wechselkurse, EZB-Leitzinsen,
+ *    Zinskurve, 5-Jahres-Verlauf, Stress Euroraum, VIX & sichere Häfen. Die Aufteilung hält jeden Lauf unter dem CPU-Limit des kostenlosen Workers-Tarifs.
  *    Die Aufteilung hält jeden Lauf unter dem CPU-Limit des kostenlosen Workers-Tarifs.
  *  - Ergebnisse liegen im KV-Speicher DATA unter „part:<name>“.
  *  - GET  /data/marketdata.json  → alle Teilbereiche zusammengeführt
@@ -14,10 +14,10 @@ import config from '../data.config.json';
 import { collectData, fetchCurveAt, mergeParts, NoDataError, PARTS, summarize } from '../scripts/lib/collect.mjs';
 
 /**
- * Ein einziger Cron-Ausdruck („5-9 * * * *“) löst stündlich fünf getrennte Läufe aus.
+ * Ein einziger Cron-Ausdruck („5-11 * * * *“) löst stündlich sieben getrennte Läufe aus.
  * Die Minute bestimmt den Teilbereich; jeder Lauf hat sein eigenes CPU-Budget.
  */
-const MINUTE_PART = { 5: 'kurse', 6: 'fx', 7: 'ezb', 8: 'kurve', 9: 'lang' };
+const MINUTE_PART = { 5: 'kurse', 6: 'fx', 7: 'ezb', 8: 'kurve', 9: 'lang', 10: 'risiko', 11: 'haefen' };
 
 /** Mindestabstand zwischen zwei manuellen Abrufen desselben Teilbereichs. */
 const MIN_REFRESH_MS = 60 * 1000;

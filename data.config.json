@@ -213,5 +213,39 @@
       "long": "10Y",
       "short": "2Y"
     }
+  },
+  "risk": {
+    "historyYears": 5,
+    "vix": "^VIX",
+    "ciss": "D.U2.Z0Z.4F.EC.SS_CIN.IDX",
+    "sovereign": "B.U2.EUR.4F.G_N_A+G_N_C.SV_C_YM.SR_10Y",
+    "estr": "B.EU000A2X2A25.WT",
+    "euribor3m": "D.D0.EUR.MMKT.EURIBOR.M03.BID._Z",
+    "havens": [
+      {
+        "key": "gold",
+        "label": "Gold",
+        "symbol": "GC=F",
+        "unit": "USD",
+        "decimals": 0,
+        "description": "Feinunze, Terminkontrakt (nächster Fälligkeit)"
+      },
+      {
+        "key": "brent",
+        "label": "Brent-Öl",
+        "symbol": "BZ=F",
+        "unit": "USD",
+        "decimals": 2,
+        "description": "Barrel, Terminkontrakt"
+      },
+      {
+        "key": "dxy",
+        "label": "Dollar-Index",
+        "symbol": "DX-Y.NYB",
+        "unit": "",
+        "decimals": 2,
+        "description": "US-Dollar gegen sechs Hauptwährungen"
+      }
+    ]
   }
 }

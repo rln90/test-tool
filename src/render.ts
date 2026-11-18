@@ -55,7 +55,7 @@ let lastContainer: HTMLElement | null = null;
 
 // ---------- Berechnungen ----------
 
-type Kind = 'asset' | 'rates' | 'fx';
+type Kind = 'asset' | 'rates' | 'fx' | 'risk' | 'havens';
 
 function kindOf(i: Instrument): Kind {
   if (i.kind) return i.kind;
@@ -140,6 +140,9 @@ function staleBadge(item: { error?: string; stale?: boolean }): HTMLElement | nu
 
 /** Kurzcodes je Bereich (sichtbar nur in der Terminal-Gestaltung). */
 const CODES: Record<string, string> = {
+  Marktstress: 'RISK',
+  Positionen: 'POS',
+  'Sichere Häfen & Rohstoffe': 'CMDTY',
   Kursliste: 'WL',
   'Euro-Zinskurve': 'YC',
   'Leitzinsen & Renditen': 'IR',
@@ -620,6 +623,157 @@ function fxPanel(fx: Instrument | undefined): HTMLElement {
   return panel('Wechselkurse', `${fx.note ?? '1 EUR = …'}`, staleBadge(fx), h('div', { class: 'table-wrap' }, table));
 }
 
+// ---------- Risiko ----------
+
+type Level = 'ok' | 'warn' | 'alert';
+const LEVEL_TEXT: Record<Level, string> = { ok: 'unauffällig', warn: 'erhöht', alert: 'hoch' };
+
+/** Ampel als Plakette mit Text (nicht nur Farbe). */
+function levelChip(level: Level | null | undefined, title?: string): HTMLElement {
+  if (!level) return h('span', { class: 'level none', title: title ?? '' }, 'keine Daten');
+  return h('span', { class: `level ${level}`, title: title ?? '' }, LEVEL_TEXT[level]);
+}
+
+const worse = (a: Level, b: Level): Level => (['ok', 'warn', 'alert'].indexOf(a) >= ['ok', 'warn', 'alert'].indexOf(b) ? a : b);
+
+function riskTile(m: Measure): HTMLElement {
+  const decimals = m.decimals ?? 2;
+  const unit = m.unit ? ` ${m.unit}` : '';
+  const d = m.value !== null && m.previous !== null && m.previous !== undefined ? m.value - m.previous : null;
+  return h(
+    'div',
+    { class: `risk-tile ${m.level ?? 'none'}`, title: m.description ?? '' },
+    h('div', { class: 'risk-top' }, h('span', { class: 'risk-label' }, m.label), levelChip(m.level, m.levelNote)),
+    h(
+      'div',
+      { class: 'risk-mid' },
+      h('span', { class: 'risk-value' }, `${fmtNumber(m.value, decimals)}${unit}`),
+      d !== null ? delta(d, decimals, m.unit ?? '', true, 'ggü. Vortag') : null,
+    ),
+    h('div', { class: 'risk-spark' }, sparkline(m.series, `Verlauf ${m.label}, 1 Jahr`)),
+    h('div', { class: 'meta' }, m.levelNote ?? ''),
+  );
+}
+
+/** Kennzahlen je Position: Abstand zum 52-Wochen-Hoch und Schwankung der letzten 30 Tage. */
+function positionRisk(a: Instrument) {
+  const all = fullSeries(a);
+  const last = all.at(-1);
+  const year = last ? all.filter((p) => p.t >= shiftDate(last.t, 365)) : [];
+  const high = year.length ? Math.max(...year.map((p) => p.v)) : null;
+  const drawdown = last && high ? (last.v / high - 1) * 100 : null;
+
+  // Realisierte Volatilität: Standardabweichung der täglichen Log-Renditen, aufs Jahr hochgerechnet.
+  const crypto = a.group === 'Krypto';
+  const window = crypto ? 30 : 21; // 30 Kalendertage ≈ 21 Handelstage
+  const yearFactor = Math.sqrt(crypto ? 365 : 252);
+  const daily = a.series ?? [];
+  const rets = daily.slice(1).map((p, i) => Math.log(p.v / daily[i].v)).filter((r) => Number.isFinite(r));
+  const std = (xs: number[]) => {
+    const mean = xs.reduce((s2, x) => s2 + x, 0) / xs.length;
+    return Math.sqrt(xs.reduce((s2, x) => s2 + (x - mean) ** 2, 0) / (xs.length - 1));
+  };
+  const vol = rets.length > window ? std(rets.slice(-window)) * yearFactor * 100 : null;
+  const rolling: number[] = [];
+  for (let i = window; i <= rets.length; i++) rolling.push(std(rets.slice(i - window, i)) * yearFactor * 100);
+  const avgVol = rolling.length ? rolling.reduce((s2, x) => s2 + x, 0) / rolling.length : null;
+  const ratio = vol !== null && avgVol ? vol / avgVol : null;
+
+  const ddLevel: Level | null = drawdown === null ? null : drawdown < -20 ? 'alert' : drawdown < -10 ? 'warn' : 'ok';
+  const volLevel: Level | null = ratio === null ? null : ratio > 1.75 ? 'alert' : ratio > 1.25 ? 'warn' : 'ok';
+  const level = ddLevel && volLevel ? worse(ddLevel, volLevel) : (ddLevel ?? volLevel);
+  return { drawdown, high, vol, avgVol, ratio, level, ddLevel, volLevel };
+}
+
+function riskSection(data: MarketData, assets: Instrument[]): HTMLElement[] {
+  const riskItems = data.instruments.filter((i) => kindOf(i) === 'risk');
+  const havens = data.instruments.find((i) => kindOf(i) === 'havens');
+  if (!riskItems.length && !assets.length) return [];
+  const indicators = riskItems.flatMap((i) => i.measures);
+  const problem = riskItems.find((i) => i.error);
+
+  const stressPanel = panel(
+    'Marktstress',
+    'Ampel: feste Schwellen (VIX) bzw. Vergleich mit den letzten 5 Jahren',
+    problem ? staleBadge(problem) : null,
+    indicators.length
+      ? h('div', { class: 'risk-grid' }, ...indicators.map(riskTile))
+      : h('div', { class: 'empty' }, 'Noch keine Risikodaten – sie werden stündlich abgerufen.'),
+  );
+
+  const rows = assets.map((a) => {
+    const r = positionRisk(a);
+    return h(
+      'tr',
+      { class: 'row' },
+      h('td', { class: 'name-cell', title: a.name }, h('div', { class: 'name' }, a.name), h('div', { class: 'meta' }, a.ticker ?? '')),
+      h(
+        'td',
+        { class: 'num', title: r.high !== null ? `52-Wochen-Hoch: ${fmtNumber(r.high)} ${a.currency ?? ''}` : '' },
+        h('span', { class: `num ${r.ddLevel === 'ok' ? 'flat' : 'down'}` }, fmtSigned(r.drawdown, 1, ' %')),
+      ),
+      h(
+        'td',
+        { class: 'num hide-sm', title: r.avgVol !== null ? `Durchschnitt der letzten 6 Monate: ${fmtNumber(r.avgVol, 0)} %` : '' },
+        `${fmtNumber(r.vol, 0)} %`,
+      ),
+      h('td', { class: 'num hide-sm' }, r.ratio !== null ? `${fmtNumber(r.ratio, 1)}×` : '–'),
+      h('td', { class: 'num' }, levelChip(r.level)),
+    );
+  });
+  const posPanel = panel(
+    'Positionen',
+    'Ampel: Abstand zum Hoch ab −10 % erhöht, ab −20 % hoch; Schwankung ab 1,25× bzw. 1,75× des Üblichen',
+    h(
+      'div',
+      { class: 'table-wrap' },
+      h(
+        'table',
+        { class: 'table' },
+        h(
+          'thead',
+          {},
+          h(
+            'tr',
+            {},
+            h('th', { scope: 'col' }, 'Name'),
+            h('th', { scope: 'col', class: 'num', title: 'Abstand zum höchsten Kurs der letzten 52 Wochen' }, 'vom Hoch'),
+            h('th', { scope: 'col', class: 'num hide-sm', title: 'Realisierte Volatilität der letzten 30 Tage, aufs Jahr hochgerechnet' }, 'Vola 30 T'),
+            h('th', { scope: 'col', class: 'num hide-sm', title: 'Vola 30 T im Verhältnis zum Durchschnitt der letzten 6 Monate' }, 'ggü. üblich'),
+            h('th', { scope: 'col', class: 'num' }, 'Einschätzung'),
+          ),
+        ),
+        h('tbody', {}, ...rows),
+      ),
+    ),
+  );
+
+  const out: HTMLElement[] = [
+    sectionHead('Risiko', `Quelle: ${[...new Set(riskItems.flatMap((i) => (i.source ?? '').split(', ')).filter(Boolean))].join(', ') || 'Yahoo Finance, EZB, Bundesbank'}`),
+    h('div', { class: 'grid-2 risk-row' }, stressPanel, posPanel),
+  ];
+  if (havens?.measures.length) {
+    const tiles = havens.measures.map((m) => {
+      const decimals = m.decimals ?? 2;
+      const dPct = m.value !== null && m.previous ? ((m.value - m.previous) / m.previous) * 100 : null;
+      return h(
+        'div',
+        { class: 'haven', title: m.description ?? '' },
+        h('div', { class: 'risk-label' }, m.label),
+        h(
+          'div',
+          { class: 'risk-mid' },
+          h('span', { class: 'risk-value' }, `${fmtNumber(m.value, decimals)}${m.unit ? ` ${m.unit}` : ''}`),
+          pill(dPct),
+        ),
+        h('div', { class: 'risk-spark' }, sparkline(m.series, `Verlauf ${m.label}, 6 Monate`)),
+      );
+    });
+    out.push(panel('Sichere Häfen & Rohstoffe', 'Tagesveränderung · Verlauf 6 Monate', staleBadge(havens), h('div', { class: 'haven-row' }, ...tiles)));
+  }
+  return out;
+}
+
 // ---------- Seite ----------
 
 function problems(data: MarketData): HTMLElement | null {
@@ -654,6 +808,7 @@ export function renderData(container: HTMLElement, data: MarketData): void {
     ...[
       problems(data),
       overview(data),
+      ...riskSection(data, assets),
       sectionHead('Märkte', `ETFs an Xetra in EUR, Bitcoin in EUR · Quelle: ${assets[0]?.source ?? 'Yahoo Finance'}`),
       h('div', { class: 'grid-2 markets' }, watchlist(assets, selected), chartPanel(selected)),
       sectionHead('Zinsen', `Quelle: ${[...new Set([rates?.source, ...(curve?.source ?? '').split(', ')].filter(Boolean))].join(', ') || 'EZB'}`),

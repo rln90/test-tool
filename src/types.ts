@@ -14,6 +14,12 @@ export interface Measure {
   /** Beschreibung des Vorwerts, z. B. „ggü. 01.05.2026“. */
   previousLabel?: string;
   unit?: string;
+  /** Ampel für Risikoindikatoren: ok = unauffällig, warn = erhöht, alert = hoch. */
+  level?: 'ok' | 'warn' | 'alert' | null;
+  /** Begründung der Ampel, z. B. „höher als an 83 % der Tage seit 11/2021“. */
+  levelNote?: string;
+  /** Kurze Erklärung, was die Kennzahl misst. */
+  description?: string;
   /** Einheit der Veränderung, falls abweichend (z. B. „%-Pkt.“ bei Zinsen). */
   deltaUnit?: string;
   /** true = Anstieg/Rückgang nicht als gut/schlecht einfärben (z. B. Zinsen). */
@@ -34,7 +40,7 @@ export interface Price {
 export interface Instrument {
   id: string;
   /** Art des Eintrags: Kurs (ETF, Krypto …), Zinsen oder Wechselkurse. */
-  kind?: 'asset' | 'rates' | 'fx';
+  kind?: 'asset' | 'rates' | 'fx' | 'risk' | 'havens';
   /** Gruppe in der Kursliste, z. B. „ETF“ oder „Krypto“. */
   group?: string;
   name: string;

@@ -534,8 +534,164 @@ function withFallback(items, previousItems) {
 
 export class NoDataError extends Error {}
 
+// ---------- Risikoindikatoren ----------
+
+/** Anteil der Beobachtungen (in %), die kleiner oder gleich dem aktuellen Wert sind. */
+function percentileRank(values, current) {
+  if (!values.length || current === null || current === undefined) return null;
+  return (values.filter((v) => v <= current).length / values.length) * 100;
+}
+
+/** Ampel aus dem Perzentil: bis 75 % unauffällig, bis 90 % erhöht, darüber hoch. */
+function levelFromPercentile(p) {
+  if (p === null) return null;
+  return p > 90 ? 'alert' : p > 75 ? 'warn' : 'ok';
+}
+
+const monthYear = (iso) => new Date(iso).toLocaleDateString('de-DE', { month: '2-digit', year: 'numeric' });
+
+/** Kennzahl mit Ampel; historie = vollständiger Verlauf für das Perzentil, angezeigt wird das letzte Jahr. */
+function riskMeasure({ key, label, description, unit, decimals, history, fixed, scale = 1 }) {
+  const hist = history.map((p) => ({ t: p.t, v: p.v * scale }));
+  const last = hist.at(-1);
+  const prev = hist.at(-2);
+  const since = daysAgo(365);
+  const m = {
+    key,
+    label,
+    description,
+    unit,
+    decimals,
+    neutral: true,
+    value: last?.v ?? null,
+    previous: prev?.v ?? null,
+    previousLabel: 'ggü. Vortag',
+    asOf: last?.t,
+    series: hist.filter((p) => p.t >= since),
+  };
+  if (!last) return { ...m, level: null, levelNote: 'nicht verfügbar' };
+  if (fixed) {
+    const level = last.v > fixed.alert ? 'alert' : last.v > fixed.warn ? 'warn' : 'ok';
+    return { ...m, level, levelNote: fixed.note };
+  }
+  const pct = percentileRank(hist.map((p) => p.v), last.v);
+  return {
+    ...m,
+    level: levelFromPercentile(pct),
+    percentile: pct,
+    levelNote: `höher als an ${Math.round(pct)} % der Tage seit ${monthYear(hist[0].t)}`,
+  };
+}
+
+/** Differenz zweier Reihen an gemeinsamen Tagen (a − b). */
+function diffSeries(a, b) {
+  const bm = new Map(b.map((p) => [p.t, p.v]));
+  return a.filter((p) => bm.has(p.t)).map((p) => ({ t: p.t, v: p.v - bm.get(p.t) }));
+}
+
+/** Stressindikatoren Euroraum: CISS (EZB), Staatsanleihen-Risiko, Geldmarkt-Stress – mit 5-Jahres-Perzentil. */
+async function fetchRisk() {
+  const cfg = config.risk;
+  const out = { id: 'risiko', kind: 'risk', name: 'Stress im Euroraum', source: 'EZB, Bundesbank', measures: [] };
+  const start = daysAgo(Math.round((cfg.historyYears ?? 5) * 365.25));
+  const errors = [];
+  const attempt = async (name, fn) => {
+    try {
+      return await fn();
+    } catch (err) {
+      errors.push(`${name}: ${errMsg(err)}`);
+      return null;
+    }
+  };
+  const [ciss, yc, estr, euribor] = await Promise.all([
+    attempt('CISS', async () => [...(await ecb('CISS', cfg.ciss, { startPeriod: start })).values()][0] ?? []),
+    attempt('Staatsanleihen', async () => ecb('YC', cfg.sovereign, { startPeriod: start }, 4)),
+    attempt('€STR', async () => [...(await ecb('EST', cfg.estr, { startPeriod: start })).values()][0] ?? []),
+    attempt('EURIBOR', async () => [...(await bundesbank('BBIG1', cfg.euribor3m, { startPeriod: start })).values()][0] ?? []),
+  ]);
+
+  out.measures.push(
+    riskMeasure({
+      key: 'ciss',
+      label: 'Systemstress Euroraum (CISS)',
+      description: 'Stressindex der EZB aus Geld-, Anleihe-, Aktien-, Devisen- und Bankenmärkten (0 bis 1)',
+      unit: '',
+      decimals: 3,
+      history: ciss ?? [],
+    }),
+    riskMeasure({
+      key: 'sovereign',
+      label: 'Staatsanleihen-Risiko Euroraum',
+      description: 'Rendite aller Euro-Staatsanleihen minus AAA-Staatsanleihen, 10 Jahre',
+      unit: '%-Pkt.',
+      decimals: 2,
+      history: yc ? diffSeries(yc.get('G_N_C') ?? [], yc.get('G_N_A') ?? []) : [],
+    }),
+    riskMeasure({
+      key: 'moneymarket',
+      label: 'Geldmarkt-Stress',
+      description: 'EURIBOR 3 Monate minus €STR – Aufschlag, den Banken untereinander verlangen',
+      unit: 'Bp',
+      decimals: 0,
+      history: euribor && estr ? diffSeries(euribor, estr) : [],
+      scale: 100,
+    }),
+  );
+  if (errors.length) console.error(`[risiko] ${errors.join(' · ')}`);
+  if (out.measures.every((m) => m.value === null)) out.error = errors.join(' · ') || 'keine Risikodaten erhalten';
+  return out;
+}
+
+/** VIX (feste Schwellen 20/30); ein Jahr Verlauf reicht. */
+async function fetchVix(yahoo) {
+  const out = { id: 'vix', kind: 'risk', name: 'Volatilität USA', source: 'Yahoo Finance', measures: [] };
+  try {
+    const series = parseYahoo(await yahoo(config.risk.vix, { range: '1y' })).series;
+    out.measures.push(
+      riskMeasure({
+        key: 'vix',
+        label: 'VIX',
+        description: 'Erwartete Schwankung des S&P 500 (30 Tage) – das bekannteste „Angstbarometer“',
+        unit: '',
+        decimals: 1,
+        history: series,
+        fixed: { warn: 20, alert: 30, note: 'Schwellen: ab 20 erhöht, ab 30 hoch' },
+      }),
+    );
+  } catch (err) {
+    out.error = errMsg(err);
+    console.error(`[vix] ${out.error}`);
+  }
+  return out;
+}
+
+/** Sichere Häfen & Rohstoffe (Gold, Brent, Dollar-Index): Kurs, Vortag, Verlauf 6 Monate. */
+async function fetchHavens(yahoo) {
+  const cfg = config.risk;
+  const out = { id: 'haefen', kind: 'havens', name: 'Sichere Häfen & Rohstoffe', source: 'Yahoo Finance', measures: [] };
+  for (const hv of cfg.havens ?? []) {
+    const m = { key: hv.key, label: hv.label, unit: hv.unit ?? '', decimals: hv.decimals ?? 2, description: hv.description };
+    try {
+      const y = parseYahoo(await yahoo(hv.symbol));
+      Object.assign(m, {
+        value: y.price?.last ?? null,
+        previous: y.price && y.price.change !== null ? y.price.last - y.price.change : null,
+        previousLabel: 'ggü. Vortag',
+        asOf: y.price?.asOf,
+        series: y.series,
+      });
+    } catch (err) {
+      console.error(`[haefen:${hv.key}] ${errMsg(err)}`);
+      Object.assign(m, { value: null });
+    }
+    out.measures.push(m);
+  }
+  if (out.measures.every((m) => m.value === null)) out.error = 'keine Kurse erhalten';
+  return out;
+}
+
 /** Teilbereiche, die einzeln abgerufen werden können (z. B. je ein Cloudflare-Cron-Lauf). */
-export const PARTS = ['kurse', 'fx', 'ezb', 'kurve', 'lang'];
+export const PARTS = ['kurse', 'fx', 'ezb', 'kurve', 'lang', 'risiko', 'haefen'];
 
 /**
  * Holt die gewünschten Teilbereiche (Standard: alle). Ausgefallene Bereiche werden durch den
@@ -552,11 +708,14 @@ export async function collectData(cfg, previous = null, parts = PARTS) {
   const instrumentsFor = (part) => (config.yahoo?.instruments ?? []).filter((inst) => (inst.part ?? 'kurse') === part);
   const wantedInstruments = PARTS.filter(want).flatMap(instrumentsFor);
 
-  const [yahooItems, fx, rates, curve] = await Promise.all([
+  const [yahooItems, fx, rates, curve, risk, vix, havens] = await Promise.all([
     Promise.all(wantedInstruments.map((inst) => fetchYahooInstrument(inst, yahoo))),
     want('fx') && config.yahoo?.fx ? fetchFx(yahoo) : null,
     want('ezb') && config.ecb?.rates ? fetchEcbRates() : null,
     want('kurve') && config.curve ? fetchCurve() : null,
+    want('risiko') && config.risk ? fetchRisk() : null,
+    want('haefen') && config.risk?.vix ? fetchVix(yahoo) : null,
+    want('haefen') && config.risk?.havens ? fetchHavens(yahoo) : null,
   ]);
 
   // Teilbereich „lang“: Wochenkurse je Kurs-Instrument; bei Fehler bleibt der vorige Verlauf erhalten.
@@ -574,7 +733,7 @@ export async function collectData(cfg, previous = null, parts = PARTS) {
     }
   }
 
-  const instruments = withFallback([...yahooItems, rates, fx].filter(Boolean), previous?.instruments).map((x) =>
+  const instruments = withFallback([...yahooItems, rates, fx, vix, risk, havens].filter(Boolean), previous?.instruments).map((x) =>
     longSeries?.[x.id] ? { ...x, longSeries: longSeries[x.id] } : x,
   );
   const curves = withFallback([curve].filter(Boolean), previous?.curves);
@@ -600,7 +759,7 @@ export function mergeParts(byPart) {
   return {
     generatedAt: got.map((d) => d.generatedAt).sort().at(-1),
     source: 'Yahoo Finance, EZB, Bundesbank',
-    instruments: [...pick('kurse'), ...pick('ezb'), ...pick('fx')].map((x) =>
+    instruments: [...pick('kurse'), ...pick('ezb'), ...pick('fx'), ...(byPart.haefen?.instruments ?? []).filter((x) => x.id === 'vix'), ...pick('risiko'), ...(byPart.haefen?.instruments ?? []).filter((x) => x.id !== 'vix')].map((x) =>
       byPart.lang?.longSeries?.[x.id] ? { ...x, longSeries: byPart.lang.longSeries[x.id] } : x,
     ),
     // Ältere Datenstände hatten die Zinskurve im Teilbereich „ezb“.
