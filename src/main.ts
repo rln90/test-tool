@@ -144,7 +144,7 @@ async function startFetch(): Promise<void> {
   if (fetching) return;
   if (config.refreshUrl) {
     setBusy(true);
-    const result = await refreshViaWorker(config.refreshUrl, config.refreshParts ?? ['kurse', 'fx', 'ezb', 'kurve', 'lang']);
+    const result = await refreshViaWorker(config.refreshUrl, config.refreshParts ?? ['kurse', 'fx', 'ezb', 'kurve', 'lang', 'risiko', 'haefen']);
     setBusy(false);
     showInfo(result.ok && !result.message ? null : (result.message ?? null));
     await refresh();

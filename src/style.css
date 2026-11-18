@@ -371,3 +371,35 @@ h1 { font-size: 20px; margin: 0 0 2px; letter-spacing: -0.01em; }
   .panel-tools { row-gap: 8px; }
   .rates-grid > .panel:first-child .chart-box { min-height: 380px; }
 }
+
+/* ---------- Risiko ---------- */
+.risk-row { align-items: stretch; }
+.risk-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); }
+.risk-tile, .haven {
+  border: 1px solid var(--border); border-radius: calc(var(--radius) - 2px); padding: 10px 12px;
+  display: grid; gap: 4px; min-width: 0; align-content: start;
+}
+.risk-tile { border-left-width: 3px; }
+.risk-tile.ok { border-left-color: var(--up); }
+.risk-tile.warn { border-left-color: var(--warn-text); }
+.risk-tile.alert { border-left-color: var(--down); }
+.risk-top { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.risk-label { color: var(--muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; min-width: 0; }
+.risk-mid { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.risk-value { font-family: var(--font-num); font-size: 20px; font-weight: 600; }
+.risk-spark .spark { width: 100%; height: 26px; }
+.level {
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+}
+.level::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.level.ok { color: var(--up); background: var(--up-bg); }
+.level.warn { color: var(--warn-text); background: var(--warn-bg); }
+.level.alert { color: var(--down); background: var(--down-bg); }
+.level.none { color: var(--muted); background: var(--surface-2); }
+.level.none::before { display: none; }
+.haven-row { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); }
+@media (max-width: 560px) {
+  .risk-row .name-cell { min-width: 130px; }
+  .risk-row .name-cell .name { white-space: normal; }
+}

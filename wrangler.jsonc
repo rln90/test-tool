@@ -19,7 +19,7 @@
     "kv_namespaces": [{ "binding": "DATA", "id": "2f677c03001946548d54afb46301204b" }]
   },
   "triggers": {
-    // Ein Ausdruck, fünf Läufe pro Stunde (Minute 5–9); die Minute wählt den Teilbereich, siehe MINUTE_PART in worker/index.js.
-    "crons": ["5-9 * * * *"]
+    // Ein Ausdruck, sieben Läufe pro Stunde (Minute 5–11); die Minute wählt den Teilbereich, siehe MINUTE_PART in worker/index.js.
+    "crons": ["5-11 * * * *"]
   }
 }
