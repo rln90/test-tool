@@ -19,10 +19,16 @@ function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+/** Diagrammschrift aus der aktuellen Gestaltung übernehmen (Token --font-num). */
+function applyChartFont(): void {
+  Chart.defaults.font.family = cssVar('--font-num') || 'system-ui, sans-serif';
+}
+
 const charts = new Map<string, Chart>();
 
 /** Zeichnet bzw. aktualisiert einen Linienverlauf im Canvas mit der angegebenen ID. */
 export function renderLine(id: string, canvas: HTMLCanvasElement, series: Point[], decimals = 2, compact = false): void {
+  applyChartFont();
   const labels = series.map((p) => fmtDate(p.t));
   const values = series.map((p) => p.v);
   // Neutrale Linienfarbe; Auf/Ab wird über die Kennzahlen daneben angezeigt.
@@ -121,7 +127,7 @@ const moneyMarketBand = {
     ctx.fillStyle = cssVar('--band');
     ctx.fillRect(left, top, right - left, bottom - top);
     ctx.fillStyle = cssVar('--muted');
-    ctx.font = '600 11px system-ui, sans-serif';
+    ctx.font = `600 11px ${cssVar('--font-num') || 'system-ui, sans-serif'}`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText('EURIBOR', left + 6, top + 6);
@@ -134,6 +140,7 @@ const moneyMarketBand = {
  * Vergleichslinien (Stichtag) gestrichelt in derselben Farbe.
  */
 export function renderCurve(id: string, canvas: HTMLCanvasElement, curve: Curve, compareLines: CurveLine[]): void {
+  applyChartFont();
   charts.get(id)?.destroy();
   const muted = cssVar('--muted');
   const grid = cssVar('--grid');
@@ -214,6 +221,7 @@ const MONTHS = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 
  * laufendes Jahr kräftig, Vorjahre gedämpft, Durchschnitt gestrichelt.
  */
 export function renderSeasonal(id: string, canvas: HTMLCanvasElement, data: Seasonal): void {
+  applyChartFont();
   charts.get(id)?.destroy();
   const muted = cssVar('--muted');
   const grid = cssVar('--grid');

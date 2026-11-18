@@ -1,4 +1,12 @@
+import '@fontsource/ibm-plex-mono/latin-400.css';
+import '@fontsource/ibm-plex-mono/latin-500.css';
+import '@fontsource/ibm-plex-mono/latin-600.css';
+import '@fontsource/ibm-plex-sans/latin-400.css';
+import '@fontsource/ibm-plex-sans/latin-500.css';
+import '@fontsource/ibm-plex-sans/latin-600.css';
 import './style.css';
+import './looks.css';
+import { applyLook, lookSwitcher, resolveLook } from './looks';
 import { Info, RefreshCw, TriangleAlert } from 'lucide';
 import { HttpError, loadConfig, loadMarketData, refreshViaWorker } from './api';
 import { h } from './dom';
@@ -39,6 +47,11 @@ app.append(
     ' · Alle Angaben ohne Gewähr.',
   ),
 );
+
+// Gestaltung sofort anwenden (Adresse/Browser), Vorgabe aus app-config folgt nach dem Laden.
+applyLook(resolveLook());
+const footSwitch = h('div', { class: 'pagefoot' });
+app.append(footSwitch);
 
 let config: AppConfig;
 let timer: number | undefined;
@@ -166,6 +179,9 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', rer
 
 loadConfig().then((cfg) => {
   config = cfg;
+  const look = resolveLook(cfg.look);
+  applyLook(look);
+  footSwitch.replaceChildren(lookSwitcher(look, rerenderCharts));
   setCurveSource(cfg.curveUrl, cfg.curveMinDate);
   updateBtn.title =
     cfg.refreshUrl || cfg.github

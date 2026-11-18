@@ -20,6 +20,20 @@ Fällt eine Quelle aus, bleibt der letzte veröffentlichte Stand stehen und wird
 3. **Zinsen:** Euro-Zinskurve (EURIBOR bis 12 M, danach Pfandbriefe und AAA-Staatsanleihen); Vergleich mit „vor 30 Tagen“, „vor 1 Jahr“ oder einem frei wählbaren Stichtag ab 06.09.2004 (nur auf Cloudflare); daneben Leitzinsen, EURIBOR und Renditen
 4. **Währungen:** Wechselkurse mit Tages-, 1-Monats- und 6-Monats-Veränderung
 
+## Gestaltung
+
+Vier Gestaltungen, umschaltbar in der Fußzeile („Design: …“) oder per Adresse `?look=…`:
+
+| `look` | Beschreibung |
+|---|---|
+| `standard` | bisherige Oberfläche, hell/dunkel nach Systemeinstellung |
+| `terminal` | schwarz mit Bernstein-Akzent, durchgehend Monospace, dicht, Bereichscodes (WL, GP, YC, IR, FX) |
+| `desk` | dunkles Schiefer-Blau mit Cyan, Zahlen in Monospace |
+| `research` | hell und flach mit kräftigen Linien, wie ein gedruckter Bericht |
+
+Die eigene Auswahl merkt sich der Browser; die Vorgabe für alle steht in `public/app-config.json` (`"look"`).
+Schriften (IBM Plex Sans/Mono) sind eingebunden, es werden keine externen Dienste geladen.
+
 ## Betrieb auf Cloudflare (empfohlen)
 
 Ein Cloudflare Worker liefert die Seite aus und ruft die Daten selbst ab – ohne GitHub Actions.
